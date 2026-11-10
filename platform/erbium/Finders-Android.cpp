@@ -7,9 +7,7 @@
 // ============================================================================
 #include "pch-android.h"
 #include "RT.h"
-#include "../../Erbium/Erbium/Public/Finders.h"
-#include "../../Erbium/Erbium/Public/Hooking.hpp"
-#include "../../Erbium/Erbium/Public/Misc.h"
+#include "Finders.h"
 
 
 // ============================================================================

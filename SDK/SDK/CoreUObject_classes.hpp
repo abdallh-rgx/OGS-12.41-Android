@@ -326,7 +326,7 @@ class UClass : public UStruct
 {
 public:
 	uint8                                         Pad_C8[0x20];                                      // 0x00C8(0x0020)(Fixing Size After Last Property [ Dumper-7 ])
-	enum class EClassCastFlags                    CastFlags;                                         // 0x00E8(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	EClassCastFlags                    CastFlags;                                         // 0x00E8(0x0008)(NOT AUTO-GENERATED PROPERTY)
 	uint8                                         Pad_F0[0x40];                                      // 0x00F0(0x0040)(Fixing Size After Last Property [ Dumper-7 ])
 	class UObject*                                DefaultObject;                                     // 0x0130(0x0008)(NOT AUTO-GENERATED PROPERTY)
 	uint8                                         Pad_138[0x110];                                    // 0x0138(0x0110)(Fixing Struct Size After Last Property [ Dumper-7 ])

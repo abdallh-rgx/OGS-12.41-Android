@@ -3,6 +3,13 @@
 *.token
 GH_TOKEN
 
+# Sandbox-only dirs (not part of the project)
+skills/
+download/
+db/
+prisma/
+node_modules/
+
 # Local build artifacts
 build/
 *.o

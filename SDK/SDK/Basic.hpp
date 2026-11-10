@@ -10,12 +10,29 @@
 
 #include <string>
 #include <iostream>
+#ifdef __ANDROID__
+// Android port — no Windows.h; module base is resolved via dl_iterate_phdr below.
+// (_GNU_SOURCE is required for RTLD_DI_LINKMAP on bionic.)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <dlfcn.h>
+#include <link.h>
+#include <cstring>
+#else
 #include <Windows.h>
+#endif
 #include <functional>
 #include <type_traits>
 
 #include "../PropertyFixup.hpp"
 #include "../UnrealContainers.hpp"
+
+#ifdef __ANDROID__
+// bionic's <errno.h> defines these; SDK enums reuse the names.
+// OGS-ANDROID-ERRNO-UNDEF
+#undef EM_MAX
+#endif
 
 namespace SDK
 {
@@ -26,57 +43,115 @@ using namespace UC;
 
 /*
 * Disclaimer:
-*	- The 'GNames' is only a fallback and null by default, FName::AppendString is used
-*	- THe 'GWorld' offset is not used by the SDK, it's just there for "decoration", use the provided 'UWorld::GetWorld()' function instead
+*       - The 'GNames' is only a fallback and null by default, FName::AppendString is used
+*       - THe 'GWorld' offset is not used by the SDK, it's just there for "decoration", use the provided 'UWorld::GetWorld()' function instead
 */
 namespace Offsets
 {
-	constexpr int32 GObjects          = 0x08067DF0;
-	constexpr int32 AppendString      = 0x02C1DEA0;
-	constexpr int32 GNames            = 0x0804F780;
-	constexpr int32 GWorld            = 0x08158708;
-	constexpr int32 ProcessEvent      = 0x02E13BF0;
-	constexpr int32 ProcessEventIdx   = 0x00000042;
+#ifdef __ANDROID__
+        // Verified against the on-device 12.41 Android dump (SDK-AndroidReference/MobileDumper7.log):
+        //   GObjects @ base+0x10249200 (FChunkedFixedUObjectArray: Objects@+0x10, chunks of 0x10000, FUObjectItem 0x18)
+        //   GNames   @ base+0x101B5EC0 (FNamePool: Blocks@+0x40, BlocksBit=16, entry stride 2, UTF-16 supported)
+        //   GWorld   @ base+0x10191070, GEngine @ base+0x0DFDA008
+        //   ProcessEvent @ base+0x079ECBFC, UObject vtable index 0x43 (67)
+        constexpr int32 GObjects          = 0x10249200;
+        constexpr int32 AppendString      = 0x0;        // unused on Android — names decode via GNames (FNamePool)
+        constexpr int32 GNames            = 0x101B5EC0;
+        constexpr int32 GWorld            = 0x10191070;
+        constexpr int32 ProcessEvent      = 0x079ECBFC;
+        constexpr int32 ProcessEventIdx   = 0x00000043;
+#else
+        constexpr int32 GObjects          = 0x08067DF0;
+        constexpr int32 AppendString      = 0x02C1DEA0;
+        constexpr int32 GNames            = 0x0804F780;
+        constexpr int32 GWorld            = 0x08158708;
+        constexpr int32 ProcessEvent      = 0x02E13BF0;
+        constexpr int32 ProcessEventIdx   = 0x00000042;
+#endif
 }
 
 namespace InSDKUtils
 {
+#ifdef __ANDROID__
+	// Base of libUE4.so inside this process (Fortnite 12.41 Android loads libUE4.so).
+	// bionic has no dlinfo/RTLD_DI_LINKMAP — pure dl_iterate_phdr.
+	namespace AndroidBaseDetail
+	{
+		struct FPhdrQuery { uintptr_t Best; size_t BestSize; };
+
+		inline int PhdrCallback(dl_phdr_info* Info, size_t /*Size*/, void* Data)
+		{
+			FPhdrQuery* Query = static_cast<FPhdrQuery*>(Data);
+			if (!Info->dlpi_name || !Info->dlpi_addr)
+				return 0;
+
+			const bool bIsEngine = strstr(Info->dlpi_name, "libUE4.so") || strstr(Info->dlpi_name, "libUnreal.so");
+			if (!bIsEngine)
+				return 0;
+
+			// Total mapped size of this object.
+			size_t ModuleSize = 0;
+			for (int i = 0; i < Info->dlpi_phnum; ++i)
+				ModuleSize += static_cast<size_t>(Info->dlpi_phdr[i].p_memsz);
+
+			if (ModuleSize > Query->BestSize)
+			{
+				Query->BestSize = ModuleSize;
+				Query->Best = Info->dlpi_addr;
+			}
+			return 0;
+		}
+	}
+
 	inline uintptr_t GetImageBase()
 	{
-		return reinterpret_cast<uintptr_t>(GetModuleHandle(0));
-	}
+		static uintptr_t CachedBase = 0;
+		if (CachedBase)
+			return CachedBase;
 
-	template<typename FuncType>
-	inline FuncType GetVirtualFunction(const void* ObjectInstance, int32 Index)
-	{
-		void** VTable = *reinterpret_cast<void***>(const_cast<void*>(ObjectInstance));
-
-		return reinterpret_cast<FuncType>(VTable[Index]);
+		AndroidBaseDetail::FPhdrQuery Query{ 0, 0 };
+		dl_iterate_phdr(&AndroidBaseDetail::PhdrCallback, &Query);
+		CachedBase = Query.Best;
+		return CachedBase;
 	}
+#else
+        inline uintptr_t GetImageBase()
+        {
+                return reinterpret_cast<uintptr_t>(GetModuleHandle(0));
+        }
+#endif
 
-	template<typename FuncType, typename... ParamTypes>
-	requires std::invocable<FuncType, ParamTypes...>
-	inline auto CallGameFunction(FuncType Function, ParamTypes&&... Args)
-	{
-		return Function(std::forward<ParamTypes>(Args)...);
-	}
+        template<typename FuncType>
+        inline FuncType GetVirtualFunction(const void* ObjectInstance, int32 Index)
+        {
+                void** VTable = *reinterpret_cast<void***>(const_cast<void*>(ObjectInstance));
+
+                return reinterpret_cast<FuncType>(VTable[Index]);
+        }
+
+        template<typename FuncType, typename... ParamTypes>
+        requires std::invocable<FuncType, ParamTypes...>
+        inline auto CallGameFunction(FuncType Function, ParamTypes&&... Args)
+        {
+                return Function(std::forward<ParamTypes>(Args)...);
+        }
 }
 
 
 template<int32 Len>
 struct StringLiteral
 {
-	char Chars[Len];
+        char Chars[Len];
 
-	consteval StringLiteral(const char(&String)[Len])
-	{
-		std::copy_n(String, Len, Chars);
-	}
+        consteval StringLiteral(const char(&String)[Len])
+        {
+                std::copy_n(String, Len, Chars);
+        }
 
-	operator std::string() const
-	{
-		return static_cast<const char*>(Chars);
-	}
+        operator std::string() const
+        {
+                return static_cast<const char*>(Chars);
+        }
 };
 
 // Forward declarations because in-line forward declarations make the compiler think 'StaticClassImpl()' is a class template
@@ -88,90 +163,90 @@ class FName;
 
 namespace BasicFilesImpleUtils
 {
-	// Helper functions for StaticClassImpl and StaticBPGeneratedClassImpl
-	UClass* FindClassByName(const std::string& Name);
-	UClass* FindClassByFullName(const std::string& Name);
+        // Helper functions for StaticClassImpl and StaticBPGeneratedClassImpl
+        UClass* FindClassByName(const std::string& Name);
+        UClass* FindClassByFullName(const std::string& Name);
 
-	std::string GetObjectName(class UClass* Class);
-	int32 GetObjectIndex(class UClass* Class);
+        std::string GetObjectName(class UClass* Class);
+        int32 GetObjectIndex(class UClass* Class);
 
-	/* FName represented as a uint64. */
-	uint64 GetObjFNameAsUInt64(class UClass* Class);
+        /* FName represented as a uint64. */
+        uint64 GetObjFNameAsUInt64(class UClass* Class);
 
-	UObject* GetObjectByIndex(int32 Index);
+        UObject* GetObjectByIndex(int32 Index);
 
-	UFunction* FindFunctionByFName(const FName* Name);
+        UFunction* FindFunctionByFName(const FName* Name);
 }
 
 template<StringLiteral Name, bool bIsFullName = false>
 class UClass* StaticClassImpl()
 {
-	static class UClass* Clss = nullptr;
+        static class UClass* Clss = nullptr;
 
-	if (Clss == nullptr)
-	{
-		if constexpr (bIsFullName) {
-			Clss = BasicFilesImpleUtils::FindClassByFullName(Name);
-		}
-		else /* default */ {
-			Clss = BasicFilesImpleUtils::FindClassByName(Name);
-		}
-	}
+        if (Clss == nullptr)
+        {
+                if constexpr (bIsFullName) {
+                        Clss = BasicFilesImpleUtils::FindClassByFullName(Name);
+                }
+                else /* default */ {
+                        Clss = BasicFilesImpleUtils::FindClassByName(Name);
+                }
+        }
 
-	return Clss;
+        return Clss;
 }
 
 template<StringLiteral Name, bool bIsFullName = false, StringLiteral NonFullName = "">
 class UClass* StaticBPGeneratedClassImpl()
 {
-	/* Could be external function, not really unique to this StaticClass functon */
-	static auto SetClassIndex = [](UClass* Class, int32& Index, uint64& ClassName) -> UClass*
-	{
-		if (Class)
-		{
-			Index = BasicFilesImpleUtils::GetObjectIndex(Class);
-			ClassName = BasicFilesImpleUtils::GetObjFNameAsUInt64(Class);
-		}
+        /* Could be external function, not really unique to this StaticClass functon */
+        static auto SetClassIndex = [](UClass* Class, int32& Index, uint64& ClassName) -> UClass*
+        {
+                if (Class)
+                {
+                        Index = BasicFilesImpleUtils::GetObjectIndex(Class);
+                        ClassName = BasicFilesImpleUtils::GetObjFNameAsUInt64(Class);
+                }
 
-		return Class;
-	};
+                return Class;
+        };
 
-	static int32 ClassIdx = 0x0;
-	static uint64 ClassName = 0x0;
+        static int32 ClassIdx = 0x0;
+        static uint64 ClassName = 0x0;
 
-	/* Use the full name to find an object */
-	if constexpr (bIsFullName)
-	{
-		if (ClassIdx == 0x0) [[unlikely]]
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassName);
+        /* Use the full name to find an object */
+        if constexpr (bIsFullName)
+        {
+                if (ClassIdx == 0x0) [[unlikely]]
+                        return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassName);
 
-		UClass* ClassObj = static_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
+                UClass* ClassObj = reinterpret_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
 
-		/* Could use cast flags too to save some string comparisons */
-		if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassName)
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassName);
+                /* Could use cast flags too to save some string comparisons */
+                if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassName)
+                        return SetClassIndex(BasicFilesImpleUtils::FindClassByFullName(Name), ClassIdx, ClassName);
 
-		return ClassObj;
-	}
-	else /* Default, use just the name to find an object*/
-	{
-		if (ClassIdx == 0x0) [[unlikely]]
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassName);
+                return ClassObj;
+        }
+        else /* Default, use just the name to find an object*/
+        {
+                if (ClassIdx == 0x0) [[unlikely]]
+                        return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassName);
 
-		UClass* ClassObj = static_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
+                UClass* ClassObj = reinterpret_cast<UClass*>(BasicFilesImpleUtils::GetObjectByIndex(ClassIdx));
 
-		/* Could use cast flags too to save some string comparisons */
-		if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassName)
-			return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassName);
+                /* Could use cast flags too to save some string comparisons */
+                if (!ClassObj || BasicFilesImpleUtils::GetObjFNameAsUInt64(ClassObj) != ClassName)
+                        return SetClassIndex(BasicFilesImpleUtils::FindClassByName(Name), ClassIdx, ClassName);
 
-		return ClassObj;
-	}
+                return ClassObj;
+        }
 }
 
 template<class ClassType>
 ClassType* GetDefaultObjImpl()
 {
-	return static_cast<ClassType*>(ClassType::StaticClass()->DefaultObject);
+        return static_cast<ClassType*>(ClassType::StaticClass()->DefaultObject);
 }
 
 
@@ -180,13 +255,13 @@ ClassType* GetDefaultObjImpl()
 struct FUObjectItem final
 {
 public:
-	//class UObject*                                Object;                                            // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	//uint8                                         Pad_8[0x10];                                       // 0x0008(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
+        //class UObject*                                Object;                                            // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        //uint8                                         Pad_8[0x10];                                       // 0x0008(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
 
-	class UObject* Object;
-	int32 Flags;
-	int32 ClusterRootIndex;
-	int32 SerialNumber;
+        class UObject* Object;
+        int32 Flags;
+        int32 ClusterRootIndex;
+        int32 SerialNumber;
 };
 static_assert(alignof(FUObjectItem) == 0x000008, "Wrong alignment on FUObjectItem");
 static_assert(sizeof(FUObjectItem) == 0x000018, "Wrong size on FUObjectItem");
@@ -195,118 +270,131 @@ static_assert(offsetof(FUObjectItem, Object) == 0x000000, "Member 'FUObjectItem:
 class TUObjectArray
 {
 public:
-	enum
-	{
-		ElementsPerChunk = 0x10000,
-	};
+        enum
+        {
+                ElementsPerChunk = 0x10000,
+        };
 
 private:
-	static inline auto DecryptPtr = [](void* ObjPtr) -> uint8*
-	{
-		return reinterpret_cast<uint8*>(ObjPtr);
-	};
+        static inline auto DecryptPtr = [](void* ObjPtr) -> uint8*
+        {
+                return reinterpret_cast<uint8*>(ObjPtr);
+        };
 
 public:
-	FUObjectItem** Objects;
-	uint8 Pad_0[0x08];
-	int32 MaxElements;
-	int32 NumElements;
-	int32 MaxChunks;
-	int32 NumChunks;
+#ifdef __ANDROID__
+        // Android layout — confirmed by the on-device dump:
+        //   Objects @ +0x10, MaxElements @ +0x20, NumElements @ +0x24,
+        //   MaxChunks @ +0x28, NumChunks @ +0x2C, ElementsPerChunk 0x10000.
+        uint8 Pad_Android_0[0x10];
+        FUObjectItem** Objects;
+        uint8 Pad_0[0x08];
+        int32 MaxElements;
+        int32 NumElements;
+        int32 MaxChunks;
+        int32 NumChunks;
+#else
+        FUObjectItem** Objects;
+        uint8 Pad_0[0x08];
+        int32 MaxElements;
+        int32 NumElements;
+        int32 MaxChunks;
+        int32 NumChunks;
+#endif
 
 public:
-	inline int32 Num() const
-	{
-		return NumElements;
-	}
+        inline int32 Num() const
+        {
+                return NumElements;
+        }
 
-	inline FUObjectItem** GetDecrytedObjPtr() const
-	{
-		return reinterpret_cast<FUObjectItem**>(DecryptPtr(Objects));
-	}
+        inline FUObjectItem** GetDecrytedObjPtr() const
+        {
+                return reinterpret_cast<FUObjectItem**>(DecryptPtr(Objects));
+        }
 
-	inline class UObject* GetByIndex(const int32 Index) const
-	{
-		const int32 ChunkIndex = Index / ElementsPerChunk;
-		const int32 InChunkIdx = Index % ElementsPerChunk;
+        inline class UObject* GetByIndex(const int32 Index) const
+        {
+                const int32 ChunkIndex = Index / ElementsPerChunk;
+                const int32 InChunkIdx = Index % ElementsPerChunk;
 
-		if (ChunkIndex >= NumChunks || Index >= NumElements)
-			return nullptr;
-	
-		FUObjectItem* ChunkPtr = GetDecrytedObjPtr()[ChunkIndex];
-		if (!ChunkPtr) return nullptr;
+                if (ChunkIndex >= NumChunks || Index >= NumElements)
+                        return nullptr;
+        
+                FUObjectItem* ChunkPtr = GetDecrytedObjPtr()[ChunkIndex];
+                if (!ChunkPtr) return nullptr;
 
-		return ChunkPtr[InChunkIdx].Object;
-	}
+                return ChunkPtr[InChunkIdx].Object;
+        }
 
-	inline int GetSerialByIdx(const int32 Index) const
-	{
-		const int32 ChunkIndex = Index / ElementsPerChunk;
-		const int32 InChunkIdx = Index % ElementsPerChunk;
+        inline int GetSerialByIdx(const int32 Index) const
+        {
+                const int32 ChunkIndex = Index / ElementsPerChunk;
+                const int32 InChunkIdx = Index % ElementsPerChunk;
 
-		if (ChunkIndex >= NumChunks || Index >= NumElements)
-			return 0;
+                if (ChunkIndex >= NumChunks || Index >= NumElements)
+                        return 0;
 
-		FUObjectItem* ChunkPtr = GetDecrytedObjPtr()[ChunkIndex];
-		if (!ChunkPtr) return 0;
+                FUObjectItem* ChunkPtr = GetDecrytedObjPtr()[ChunkIndex];
+                if (!ChunkPtr) return 0;
 
-		return ChunkPtr[InChunkIdx].SerialNumber;
-	}
+                return ChunkPtr[InChunkIdx].SerialNumber;
+        }
 };
 
 class TUObjectArrayWrapper
 {
 private:
-	friend class UObject;
+        friend class UObject;
 
 private:
-	void* GObjectsAddress = nullptr;
+        void* GObjectsAddress = nullptr;
 
 private:
-	TUObjectArrayWrapper() = default;
+        TUObjectArrayWrapper() = default;
 
 public:
-	TUObjectArrayWrapper(TUObjectArrayWrapper&&) = delete;
-	TUObjectArrayWrapper(const TUObjectArrayWrapper&) = delete;
+        TUObjectArrayWrapper(TUObjectArrayWrapper&&) = delete;
+        TUObjectArrayWrapper(const TUObjectArrayWrapper&) = delete;
 
-	TUObjectArrayWrapper& operator=(TUObjectArrayWrapper&&) = delete;
-	TUObjectArrayWrapper& operator=(const TUObjectArrayWrapper&) = delete;
+        TUObjectArrayWrapper& operator=(TUObjectArrayWrapper&&) = delete;
+        TUObjectArrayWrapper& operator=(const TUObjectArrayWrapper&) = delete;
 
 private:
-	inline void InitGObjects()
-	{
-		GObjectsAddress = reinterpret_cast<void*>(InSDKUtils::GetImageBase() + Offsets::GObjects);
-	}
+        inline void InitGObjects()
+        {
+                GObjectsAddress = reinterpret_cast<void*>(InSDKUtils::GetImageBase() + Offsets::GObjects);
+        }
 
 public:
-	inline void InitManually(void* GObjectsAddressParameter)
-	{
-		GObjectsAddress = GObjectsAddressParameter;
-	}
+        inline void InitManually(void* GObjectsAddressParameter)
+        {
+                GObjectsAddress = GObjectsAddressParameter;
+        }
 
-	inline class TUObjectArray* operator->()
-	{
-		if (!GObjectsAddress) [[unlikely]]
-			InitGObjects();
+        inline class TUObjectArray* operator->()
+        {
+                if (!GObjectsAddress) [[unlikely]]
+                        InitGObjects();
 
-		return reinterpret_cast<class TUObjectArray*>(GObjectsAddress);
-	}
+                return reinterpret_cast<class TUObjectArray*>(GObjectsAddress);
+        }
 
-	inline operator const void* ()
-	{
-		if (!GObjectsAddress) [[unlikely]]
-			InitGObjects();
+        inline operator const void* ()
+        {
+                if (!GObjectsAddress) [[unlikely]]
+                        InitGObjects();
 
-		return GObjectsAddress;
-	}
+                return GObjectsAddress;
+        }
 
-	inline class TUObjectArray* GetTypedPtr()
-	{
-		if (!GObjectsAddress) [[unlikely]]
-			InitGObjects();
+        inline class TUObjectArray* GetTypedPtr()
+        {
+                if (!GObjectsAddress) [[unlikely]]
+                        InitGObjects();
 
-		return reinterpret_cast<class TUObjectArray*>(GObjectsAddress);
-	}
+                return reinterpret_cast<class TUObjectArray*>(GObjectsAddress);
+        }
 };
 
 // Predefined struct FName
@@ -314,76 +402,125 @@ public:
 class FName final
 {
 public:
-	static inline void* AppendString = nullptr;                            // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        static inline void* AppendString = nullptr;                            // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
 
-	int32                                         ComparisonIndex;                                   // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	int32                                         Number;                                            // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        int32                                         ComparisonIndex;                                   // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        int32                                         Number;                                            // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
 
 public:
 
-	FName()
-		: ComparisonIndex(0),
-		Number(0)
-	{
-	}
+        FName()
+                : ComparisonIndex(0),
+                Number(0)
+        {
+        }
 
-	FName(int32 InComparisonIndex, int32 InNumber)
-		: ComparisonIndex(InComparisonIndex),
-		Number(InNumber)
-	{
-	}
+        FName(int32 InComparisonIndex, int32 InNumber)
+                : ComparisonIndex(InComparisonIndex),
+                Number(InNumber)
+        {
+        }
 
-	FName(const FString& InName) {}
+        FName(const FString& InName) {}
 
-	static void InitInternal()
-	{
-		AppendString = reinterpret_cast<void*>(InSDKUtils::GetImageBase() + Offsets::AppendString);
-	}
-	static void InitManually(void* Location)
-	{
-		AppendString = reinterpret_cast<void*>(Location);
-	}
+        static void InitInternal()
+        {
+                AppendString = reinterpret_cast<void*>(InSDKUtils::GetImageBase() + Offsets::AppendString);
+        }
+        static void InitManually(void* Location)
+        {
+                AppendString = reinterpret_cast<void*>(Location);
+        }
 
-	int32 GetDisplayIndex() const
-	{
-		return ComparisonIndex;
-	}
+        int32 GetDisplayIndex() const
+        {
+                return ComparisonIndex;
+        }
 
-	std::string GetRawString() const
-	{
-		thread_local FAllocatedString TempString(1024);
+#ifdef __ANDROID__
+        // ─── Android: decode names directly out of the FNamePool (GNames) ────────
+        // Layout confirmed by the on-device 12.41 dump:
+        //   GNames+0x38 MaxChunkIndex, +0x3C ByteCursor, +0x40 Blocks (uint8**),
+        //   BlocksBit = 16 → Block = Idx >> 16, Offset = Idx & 0xFFFF,
+        //   FNameEntry: stride 2, header uint16 @ +0x0 (bIsWide bit 0, Len bits 1..15),
+        //   string @ +0x2 (ANSICHAR, or UTF-16 when bIsWide).
+        static std::string GetNameEntryString(int32 Idx)
+        {
+                if (Idx <= 0)
+                        return std::string();
 
-		if (!AppendString)
-			InitInternal();
+                const uintptr_t GNames = InSDKUtils::GetImageBase() + static_cast<uintptr_t>(Offsets::GNames);
+                uint8_t* const* Blocks = reinterpret_cast<uint8_t* const*>(GNames + 0x40);
 
-		InSDKUtils::CallGameFunction(reinterpret_cast<void(*)(const FName*, FString&)>(AppendString), this, TempString);
+                const uint32 Block = static_cast<uint32>(Idx) >> 16;
+                const uint32 Offset = (static_cast<uint32>(Idx) & 0xFFFF) * 2;
 
-		std::string OutputString = TempString.ToString();
-		TempString.Clear();
+                // Block count sanity: MaxChunkIndex @ +0x38.
+                const int32 MaxChunkIndex = *reinterpret_cast<const int32*>(GNames + 0x38);
+                if (static_cast<int32>(Block) >= MaxChunkIndex || !Blocks[Block])
+                        return std::string();
 
-		return OutputString;
-	}
+                const uint8_t* Entry = Blocks[Block] + Offset;
+                const uint16 Header = *reinterpret_cast<const uint16*>(Entry);
+                const bool bIsWide = (Header & 1) != 0;
+                const uint32 Len = (Header >> 1) & 0x7FFF;
 
-	std::string ToString() const
-	{
-		std::string OutputString = GetRawString();
+                if (bIsWide)
+                {
+                        const char16_t* Wide = reinterpret_cast<const char16_t*>(Entry + 0x2);
+                        return UtfN::Utf16StringToUtf8String<std::string>(Wide, static_cast<int>(Len));
+                }
 
-		size_t pos = OutputString.rfind('/');
+                return std::string(reinterpret_cast<const char*>(Entry + 0x2), Len);
+        }
 
-		if (pos == std::string::npos)
-			return OutputString;
+        std::string GetRawString() const
+        {
+                std::string OutputString = GetNameEntryString(ComparisonIndex);
 
-		return OutputString.substr(pos + 1);
-	}
+                // UE display semantics: Number 0 → plain entry name, Number N>0 → "Name_N-1".
+                if (Number > 0)
+                        (OutputString += '_') += std::to_string(Number - 1);
 
-	bool operator==(const FName& Other) const
-	{
-		return ComparisonIndex == Other.ComparisonIndex && Number == Other.Number;
-	}
-	bool operator!=(const FName& Other) const
-	{
-		return ComparisonIndex != Other.ComparisonIndex || Number != Other.Number;
-	}
+                return OutputString;
+        }
+#else
+        std::string GetRawString() const
+        {
+                thread_local FAllocatedString TempString(1024);
+
+                if (!AppendString)
+                        InitInternal();
+
+                InSDKUtils::CallGameFunction(reinterpret_cast<void(*)(const FName*, FString&)>(AppendString), this, TempString);
+
+                std::string OutputString = TempString.ToString();
+                TempString.Clear();
+
+                return OutputString;
+        }
+#endif
+
+        std::string ToString() const
+        {
+                std::string OutputString = GetRawString();
+
+                size_t pos = OutputString.rfind('/');
+
+                if (pos == std::string::npos)
+                        return OutputString;
+
+                return OutputString.substr(pos + 1);
+        }
+
+        bool operator==(const FName& Other) const
+        {
+                return ComparisonIndex == Other.ComparisonIndex && Number == Other.Number;
+        }
+        bool operator!=(const FName& Other) const
+        {
+                return ComparisonIndex != Other.ComparisonIndex || Number != Other.Number;
+        }
 };
 static_assert(alignof(FName) == 0x000004, "Wrong alignment on FName");
 static_assert(sizeof(FName) == 0x000008, "Wrong size on FName");
@@ -393,63 +530,63 @@ static_assert(offsetof(FName, Number) == 0x000004, "Member 'FName::Number' has a
 template<typename ClassType>
 class TSubclassOf
 {
-	class UClass* ClassPtr;
+        class UClass* ClassPtr;
 
 public:
-	TSubclassOf() = default;
+        TSubclassOf() = default;
 
-	inline TSubclassOf(UClass* Class)
-		: ClassPtr(Class)
-	{
-	}
+        inline TSubclassOf(UClass* Class)
+                : ClassPtr(Class)
+        {
+        }
 
-	inline UClass* Get()
-	{
-		return ClassPtr;
-	}
+        inline UClass* Get()
+        {
+                return ClassPtr;
+        }
 
-	inline operator UClass*() const
-	{
-		return ClassPtr;
-	}
+        inline operator UClass*() const
+        {
+                return ClassPtr;
+        }
 
-	template<typename Target, typename = std::enable_if<std::is_base_of_v<Target, ClassType>, bool>::type>
-	inline operator TSubclassOf<Target>() const
-	{
-		return ClassPtr;
-	}
+        template<typename Target, typename = std::enable_if<std::is_base_of_v<Target, ClassType>, bool>::type>
+        inline operator TSubclassOf<Target>() const
+        {
+                return ClassPtr;
+        }
 
-	inline UClass* operator->()
-	{
-		return ClassPtr;
-	}
+        inline UClass* operator->()
+        {
+                return ClassPtr;
+        }
 
-	inline TSubclassOf& operator=(UClass* Class)
-	{
-		ClassPtr = Class;
+        inline TSubclassOf& operator=(UClass* Class)
+        {
+                ClassPtr = Class;
 
-		return *this;
-	}
+                return *this;
+        }
 
-	inline bool operator==(const TSubclassOf& Other) const
-	{
-		return ClassPtr == Other.ClassPtr;
-	}
+        inline bool operator==(const TSubclassOf& Other) const
+        {
+                return ClassPtr == Other.ClassPtr;
+        }
 
-	inline bool operator!=(const TSubclassOf& Other) const
-	{
-		return ClassPtr != Other.ClassPtr;
-	}
+        inline bool operator!=(const TSubclassOf& Other) const
+        {
+                return ClassPtr != Other.ClassPtr;
+        }
 
-	inline bool operator==(UClass* Other) const
-	{
-		return ClassPtr == Other;
-	}
+        inline bool operator==(UClass* Other) const
+        {
+                return ClassPtr == Other;
+        }
 
-	inline bool operator!=(UClass* Other) const
-	{
-		return ClassPtr != Other;
-	}
+        inline bool operator!=(UClass* Other) const
+        {
+                return ClassPtr != Other;
+        }
 };
 namespace FTextImpl
 {
@@ -458,8 +595,8 @@ namespace FTextImpl
 class FTextData final
 {
 public:
-	uint8                                         Pad_0[0x28];                                       // 0x0000(0x0028)(Fixing Size After Last Property [ Dumper-7 ])
-	class FString                                 TextSource;                                        // 0x0028(0x0010)(NOT AUTO-GENERATED PROPERTY)
+        uint8                                         Pad_0[0x28];                                       // 0x0000(0x0028)(Fixing Size After Last Property [ Dumper-7 ])
+        class FString                                 TextSource;                                        // 0x0028(0x0010)(NOT AUTO-GENERATED PROPERTY)
 };
 static_assert(alignof(FTextData) == 0x000008, "Wrong alignment on FTextData");
 static_assert(sizeof(FTextData) == 0x000038, "Wrong size on FTextData");
@@ -471,18 +608,18 @@ static_assert(offsetof(FTextData, TextSource) == 0x000028, "Member 'FTextData::T
 class FText final
 {
 public:
-	class FTextImpl::FTextData*                   TextData;                                          // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         Pad_8[0x10];                                       // 0x0008(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
+        class FTextImpl::FTextData*                   TextData;                                          // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        uint8                                         Pad_8[0x10];                                       // 0x0008(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
 
 public:
-	const class FString& GetStringRef() const
-	{
-		return TextData->TextSource;
-	}
-	std::string ToString() const
-	{
-		return TextData->TextSource.ToString();
-	}
+        const class FString& GetStringRef() const
+        {
+                return TextData->TextSource;
+        }
+        std::string ToString() const
+        {
+                return TextData->TextSource.ToString();
+        }
 };
 static_assert(alignof(FText) == 0x000008, "Wrong alignment on FText");
 static_assert(sizeof(FText) == 0x000018, "Wrong size on FText");
@@ -493,16 +630,16 @@ static_assert(offsetof(FText, TextData) == 0x000000, "Member 'FText::TextData' h
 class FWeakObjectPtr
 {
 public:
-	int32                                         ObjectIndex;                                       // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	int32                                         ObjectSerialNumber;                                // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        int32                                         ObjectIndex;                                       // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        int32                                         ObjectSerialNumber;                                // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
 
 public:
-	class UObject* Get() const;
-	class UObject* operator->() const;
-	bool operator==(const FWeakObjectPtr& Other) const;
-	bool operator!=(const FWeakObjectPtr& Other) const;
-	bool operator==(const class UObject* Other) const;
-	bool operator!=(const class UObject* Other) const;
+        class UObject* Get() const;
+        class UObject* operator->() const;
+        bool operator==(const FWeakObjectPtr& Other) const;
+        bool operator!=(const FWeakObjectPtr& Other) const;
+        bool operator==(const class UObject* Other) const;
+        bool operator!=(const class UObject* Other) const;
 };
 static_assert(alignof(FWeakObjectPtr) == 0x000004, "Wrong alignment on FWeakObjectPtr");
 static_assert(sizeof(FWeakObjectPtr) == 0x000008, "Wrong size on FWeakObjectPtr");
@@ -513,15 +650,15 @@ template<typename UEType>
 class TWeakObjectPtr : public FWeakObjectPtr
 {
 public:
-	UEType* Get() const
-	{
-		return static_cast<UEType*>(FWeakObjectPtr::Get());
-	}
+        UEType* Get() const
+        {
+                return static_cast<UEType*>(FWeakObjectPtr::Get());
+        }
 
-	UEType* operator->() const
-	{
-		return static_cast<UEType*>(FWeakObjectPtr::Get());
-	}
+        UEType* operator->() const
+        {
+                return static_cast<UEType*>(FWeakObjectPtr::Get());
+        }
 };
 
 // Predefined struct FUniqueObjectGuid
@@ -529,10 +666,10 @@ public:
 class FUniqueObjectGuid final
 {
 public:
-	uint32                                        A;                                                 // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint32                                        B;                                                 // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint32                                        C;                                                 // 0x0008(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint32                                        D;                                                 // 0x000C(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        uint32                                        A;                                                 // 0x0000(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        uint32                                        B;                                                 // 0x0004(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        uint32                                        C;                                                 // 0x0008(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        uint32                                        D;                                                 // 0x000C(0x0004)(NOT AUTO-GENERATED PROPERTY)
 };
 static_assert(alignof(FUniqueObjectGuid) == 0x000004, "Wrong alignment on FUniqueObjectGuid");
 static_assert(sizeof(FUniqueObjectGuid) == 0x000010, "Wrong size on FUniqueObjectGuid");
@@ -547,33 +684,33 @@ template<typename TObjectID>
 class TPersistentObjectPtr
 {
 public:
-	FWeakObjectPtr                                WeakPtr;                                           // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	int32                                         TagAtLastTest;                                     // 0x0008(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	TObjectID                                     ObjectID;                                          // 0x000C(0x0000)(NOT AUTO-GENERATED PROPERTY)
+        FWeakObjectPtr                                WeakPtr;                                           // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        int32                                         TagAtLastTest;                                     // 0x0008(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        TObjectID                                     ObjectID;                                          // 0x000C(0x0000)(NOT AUTO-GENERATED PROPERTY)
 
 public:
-	class UObject* Get() const
-	{
-		return WeakPtr.Get();
-	}
-	class UObject* operator->() const
-	{
-		return WeakPtr.Get();
-	}
+        class UObject* Get() const
+        {
+                return WeakPtr.Get();
+        }
+        class UObject* operator->() const
+        {
+                return WeakPtr.Get();
+        }
 };
 
 template<typename UEType>
 class TLazyObjectPtr : public TPersistentObjectPtr<FUniqueObjectGuid>
 {
 public:
-	UEType* Get() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
-	UEType* operator->() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
+        UEType* Get() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
+        UEType* operator->() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
 };
 
 namespace FakeSoftObjectPtr
@@ -584,8 +721,8 @@ namespace FakeSoftObjectPtr
 struct FSoftObjectPath
 {
 public:
-	class FName                                   AssetPathName;                                     // 0x0000(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
-	class FString                                 SubPathString;                                     // 0x0008(0x0010)(ZeroConstructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+        class FName                                   AssetPathName;                                     // 0x0000(0x0008)(ZeroConstructor, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
+        class FString                                 SubPathString;                                     // 0x0008(0x0010)(ZeroConstructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
 };
 static_assert(alignof(FSoftObjectPath) == 0x000008, "Wrong alignment on FSoftObjectPath");
 static_assert(sizeof(FSoftObjectPath) == 0x000018, "Wrong size on FSoftObjectPath");
@@ -602,28 +739,28 @@ template<typename UEType>
 class TSoftObjectPtr : public FSoftObjectPtr
 {
 public:
-	UEType* Get() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
-	UEType* operator->() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
+        UEType* Get() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
+        UEType* operator->() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
 };
 
 template<typename UEType>
 class TSoftClassPtr : public FSoftObjectPtr
 {
 public:
-	UEType* Get() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
-	UEType* operator->() const
-	{
-		return static_cast<UEType*>(TPersistentObjectPtr::Get());
-	}
+        UEType* Get() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
+        UEType* operator->() const
+        {
+                return static_cast<UEType*>(TPersistentObjectPtr::Get());
+        }
 };
 
 // Predefined struct FScriptInterface
@@ -631,20 +768,20 @@ public:
 class FScriptInterface
 {
 public:
-	UObject*                                      ObjectPointer;                                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	void*                                         InterfacePointer;                                  // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        UObject*                                      ObjectPointer;                                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        void*                                         InterfacePointer;                                  // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
 
 public:
-	class UObject* GetObjectRef() const
-	{
-		return ObjectPointer;
-	}
-	
-	void* GetInterfaceRef() const
-	{
-		return InterfacePointer;
-	}
-	
+        class UObject* GetObjectRef() const
+        {
+                return ObjectPointer;
+        }
+        
+        void* GetInterfaceRef() const
+        {
+                return InterfacePointer;
+        }
+        
 };
 static_assert(alignof(FScriptInterface) == 0x000008, "Wrong alignment on FScriptInterface");
 static_assert(sizeof(FScriptInterface) == 0x000010, "Wrong size on FScriptInterface");
@@ -663,9 +800,9 @@ class TScriptInterface final : public FScriptInterface
 class FFieldPath
 {
 public:
-	class FField*                                 ResolvedField;                                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	TWeakObjectPtr<class UStruct>                 ResolvedOwner;                                     // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	TArray<FName>                                 Path;                                              // 0x0010(0x0010)(NOT AUTO-GENERATED PROPERTY)
+        class FField*                                 ResolvedField;                                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        TWeakObjectPtr<class UStruct>                 ResolvedOwner;                                     // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        TArray<FName>                                 Path;                                              // 0x0010(0x0010)(NOT AUTO-GENERATED PROPERTY)
 };
 static_assert(alignof(FFieldPath) == 0x000008, "Wrong alignment on FFieldPath");
 static_assert(sizeof(FFieldPath) == 0x000020, "Wrong size on FFieldPath");
@@ -685,63 +822,63 @@ template<typename OptionalType, bool bIsIntrusiveUnsetCheck = false>
 class TOptional
 {
 private:
-	template<int32 TypeSize>
-	struct OptionalWithBool
-	{
-		static_assert(TypeSize > 0x0, "TOptional can not store an empty type!");
+        template<int32 TypeSize>
+        struct OptionalWithBool
+        {
+                static_assert(TypeSize > 0x0, "TOptional can not store an empty type!");
 
-		uint8 Value[TypeSize];
-		bool bIsSet;
-	};
-
-private:
-	using ValueType = std::conditional_t<bIsIntrusiveUnsetCheck, uint8[sizeof(OptionalType)], OptionalWithBool<sizeof(OptionalType)>>;
+                uint8 Value[TypeSize];
+                bool bIsSet;
+        };
 
 private:
-	alignas(OptionalType) ValueType StoredValue;
+        using ValueType = std::conditional_t<bIsIntrusiveUnsetCheck, uint8[sizeof(OptionalType)], OptionalWithBool<sizeof(OptionalType)>>;
 
 private:
-	inline uint8* GetValueBytes()
-	{
-		if constexpr (!bIsIntrusiveUnsetCheck)
-			return StoredValue.Value;
+        alignas(OptionalType) ValueType StoredValue;
 
-		return StoredValue;
-	}
+private:
+        inline uint8* GetValueBytes()
+        {
+                if constexpr (!bIsIntrusiveUnsetCheck)
+                        return StoredValue.Value;
 
-	inline const uint8* GetValueBytes() const
-	{
-		if constexpr (!bIsIntrusiveUnsetCheck)
-			return StoredValue.Value;
+                return StoredValue;
+        }
 
-		return StoredValue;
-	}
+        inline const uint8* GetValueBytes() const
+        {
+                if constexpr (!bIsIntrusiveUnsetCheck)
+                        return StoredValue.Value;
+
+                return StoredValue;
+        }
 public:
 
-	inline OptionalType& GetValueRef()
-	{
-		return *reinterpret_cast<OptionalType*>(GetValueBytes());
-	}
+        inline OptionalType& GetValueRef()
+        {
+                return *reinterpret_cast<OptionalType*>(GetValueBytes());
+        }
 
-	inline const OptionalType& GetValueRef() const
-	{
-		return *reinterpret_cast<const OptionalType*>(GetValueBytes());
-	}
+        inline const OptionalType& GetValueRef() const
+        {
+                return *reinterpret_cast<const OptionalType*>(GetValueBytes());
+        }
 
-	inline bool IsSet() const
-	{
-		if constexpr (!bIsIntrusiveUnsetCheck)
-			return StoredValue.bIsSet;
+        inline bool IsSet() const
+        {
+                if constexpr (!bIsIntrusiveUnsetCheck)
+                        return StoredValue.bIsSet;
 
-		constexpr char ZeroBytes[sizeof(OptionalType)];
+                constexpr char ZeroBytes[sizeof(OptionalType)];
 
-		return memcmp(GetValueBytes(), &ZeroBytes, sizeof(OptionalType)) == 0;
-	}
+                return memcmp(GetValueBytes(), &ZeroBytes, sizeof(OptionalType)) == 0;
+        }
 
-	inline explicit operator bool() const
-	{
-		return IsSet();
-	}
+        inline explicit operator bool() const
+        {
+                return IsSet();
+        }
 };
 
 
@@ -751,8 +888,13 @@ template<typename FunctionSignature>
 class TDelegate
 {
 public:
-	struct InvalidUseOfTDelegate                  TemplateParamIsNotAFunctionSignature;              // 0x0000(0x0000)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         Pad_0[0x10];                                       // 0x0000(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
+#ifdef __ANDROID__
+        // clang: field must have complete type; never instantiated (only the
+        // Ret(Args...) specialization below is ever used).
+        struct InvalidUseOfTDelegate { };
+#endif
+        struct InvalidUseOfTDelegate                  TemplateParamIsNotAFunctionSignature;              // 0x0000(0x0000)(NOT AUTO-GENERATED PROPERTY)
+        uint8                                         Pad_0[0x10];                                       // 0x0000(0x0010)(Fixing Struct Size After Last Property [ Dumper-7 ])
 };
 
 // Predefined struct TDelegate<Ret(Args...)>
@@ -761,263 +903,263 @@ template<typename Ret, typename... Args>
 class TDelegate<Ret(Args...)>
 {
 public:
-	FWeakObjectPtr                                Object;                                            // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	FName                                         FunctionName;                                      // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        FWeakObjectPtr                                Object;                                            // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        FName                                         FunctionName;                                      // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
 };
 
-#define UE_ENUM_OPERATORS(EEnumClass)																																	\
-																																										\
-inline constexpr EEnumClass operator|(EEnumClass Left, EEnumClass Right)																								\
-{																																										\
-	return (EEnumClass)((std::underlying_type<EEnumClass>::type)(Left) | (std::underlying_type<EEnumClass>::type)(Right));												\
-}																																										\
-																																										\
-inline constexpr EEnumClass& operator|=(EEnumClass& Left, EEnumClass Right)																								\
-{																																										\
-	return (EEnumClass&)((std::underlying_type<EEnumClass>::type&)(Left) |= (std::underlying_type<EEnumClass>::type)(Right));											\
-}																																										\
-																																										\
-inline bool operator&(EEnumClass Left, EEnumClass Right)																												\
-{																																										\
-	return (((std::underlying_type<EEnumClass>::type)(Left) & (std::underlying_type<EEnumClass>::type)(Right)) == (std::underlying_type<EEnumClass>::type)(Right));		\
-}																																										
+#define UE_ENUM_OPERATORS(EEnumClass)                                                                                                                                                                                                                                                                   \
+                                                                                                                                                                                                                                                                                                                                                \
+inline constexpr EEnumClass operator|(EEnumClass Left, EEnumClass Right)                                                                                                                                                                                                \
+{                                                                                                                                                                                                                                                                                                                                               \
+        return (EEnumClass)((std::underlying_type<EEnumClass>::type)(Left) | (std::underlying_type<EEnumClass>::type)(Right));                                                                                          \
+}                                                                                                                                                                                                                                                                                                                                               \
+                                                                                                                                                                                                                                                                                                                                                \
+inline constexpr EEnumClass& operator|=(EEnumClass& Left, EEnumClass Right)                                                                                                                                                                                             \
+{                                                                                                                                                                                                                                                                                                                                               \
+        return (EEnumClass&)((std::underlying_type<EEnumClass>::type&)(Left) |= (std::underlying_type<EEnumClass>::type)(Right));                                                                                       \
+}                                                                                                                                                                                                                                                                                                                                               \
+                                                                                                                                                                                                                                                                                                                                                \
+inline bool operator&(EEnumClass Left, EEnumClass Right)                                                                                                                                                                                                                                \
+{                                                                                                                                                                                                                                                                                                                                               \
+        return (((std::underlying_type<EEnumClass>::type)(Left) & (std::underlying_type<EEnumClass>::type)(Right)) == (std::underlying_type<EEnumClass>::type)(Right));         \
+}                                                                                                                                                                                                                                                                                                                                               
 
 enum class EObjectFlags : int32
 {
-	NoFlags							= 0x00000000,
+        NoFlags                                                 = 0x00000000,
 
-	Public							= 0x00000001,
-	Standalone						= 0x00000002,
-	MarkAsNative					= 0x00000004,
-	Transactional					= 0x00000008,
-	ClassDefaultObject				= 0x00000010,
-	ArchetypeObject					= 0x00000020,
-	Transient						= 0x00000040,
+        Public                                                  = 0x00000001,
+        Standalone                                              = 0x00000002,
+        MarkAsNative                                    = 0x00000004,
+        Transactional                                   = 0x00000008,
+        ClassDefaultObject                              = 0x00000010,
+        ArchetypeObject                                 = 0x00000020,
+        Transient                                               = 0x00000040,
 
-	MarkAsRootSet					= 0x00000080,
-	TagGarbageTemp					= 0x00000100,
+        MarkAsRootSet                                   = 0x00000080,
+        TagGarbageTemp                                  = 0x00000100,
 
-	NeedInitialization				= 0x00000200,
-	NeedLoad						= 0x00000400,
-	KeepForCooker					= 0x00000800,
-	NeedPostLoad					= 0x00001000,
-	NeedPostLoadSubobjects			= 0x00002000,
-	NewerVersionExists				= 0x00004000,
-	BeginDestroyed					= 0x00008000,
-	FinishDestroyed					= 0x00010000,
+        NeedInitialization                              = 0x00000200,
+        NeedLoad                                                = 0x00000400,
+        KeepForCooker                                   = 0x00000800,
+        NeedPostLoad                                    = 0x00001000,
+        NeedPostLoadSubobjects                  = 0x00002000,
+        NewerVersionExists                              = 0x00004000,
+        BeginDestroyed                                  = 0x00008000,
+        FinishDestroyed                                 = 0x00010000,
 
-	BeingRegenerated				= 0x00020000,
-	DefaultSubObject				= 0x00040000,
-	WasLoaded						= 0x00080000,
-	TextExportTransient				= 0x00100000,
-	LoadCompleted					= 0x00200000,
-	InheritableComponentTemplate	= 0x00400000,
-	DuplicateTransient				= 0x00800000,
-	StrongRefOnFrame				= 0x01000000,
-	NonPIEDuplicateTransient		= 0x02000000,
-	Dynamic							= 0x04000000,
-	WillBeLoaded					= 0x08000000, 
+        BeingRegenerated                                = 0x00020000,
+        DefaultSubObject                                = 0x00040000,
+        WasLoaded                                               = 0x00080000,
+        TextExportTransient                             = 0x00100000,
+        LoadCompleted                                   = 0x00200000,
+        InheritableComponentTemplate    = 0x00400000,
+        DuplicateTransient                              = 0x00800000,
+        StrongRefOnFrame                                = 0x01000000,
+        NonPIEDuplicateTransient                = 0x02000000,
+        Dynamic                                                 = 0x04000000,
+        WillBeLoaded                                    = 0x08000000, 
 };
 
 enum class EFunctionFlags : uint32
 {
-	None							= 0x00000000,
+        None                                                    = 0x00000000,
 
-	Final							= 0x00000001,
-	RequiredAPI						= 0x00000002,
-	BlueprintAuthorityOnly			= 0x00000004, 
-	BlueprintCosmetic				= 0x00000008, 
-	Net								= 0x00000040,  
-	NetReliable						= 0x00000080, 
-	NetRequest						= 0x00000100,	
-	Exec							= 0x00000200,	
-	Native							= 0x00000400,	
-	Event							= 0x00000800,   
-	NetResponse						= 0x00001000,  
-	Static							= 0x00002000,   
-	NetMulticast					= 0x00004000,	
-	UbergraphFunction				= 0x00008000,  
-	MulticastDelegate				= 0x00010000,
-	Public							= 0x00020000,	
-	Private							= 0x00040000,	
-	Protected						= 0x00080000,
-	Delegate						= 0x00100000,	
-	NetServer						= 0x00200000,	
-	HasOutParms						= 0x00400000,	
-	HasDefaults						= 0x00800000,
-	NetClient						= 0x01000000,
-	DLLImport						= 0x02000000,
-	BlueprintCallable				= 0x04000000,
-	BlueprintEvent					= 0x08000000,
-	BlueprintPure					= 0x10000000,	
-	EditorOnly						= 0x20000000,	
-	Const							= 0x40000000,
-	NetValidate						= 0x80000000,
+        Final                                                   = 0x00000001,
+        RequiredAPI                                             = 0x00000002,
+        BlueprintAuthorityOnly                  = 0x00000004, 
+        BlueprintCosmetic                               = 0x00000008, 
+        Net                                                             = 0x00000040,  
+        NetReliable                                             = 0x00000080, 
+        NetRequest                                              = 0x00000100,   
+        Exec                                                    = 0x00000200,   
+        Native                                                  = 0x00000400,   
+        Event                                                   = 0x00000800,   
+        NetResponse                                             = 0x00001000,  
+        Static                                                  = 0x00002000,   
+        NetMulticast                                    = 0x00004000,   
+        UbergraphFunction                               = 0x00008000,  
+        MulticastDelegate                               = 0x00010000,
+        Public                                                  = 0x00020000,   
+        Private                                                 = 0x00040000,   
+        Protected                                               = 0x00080000,
+        Delegate                                                = 0x00100000,   
+        NetServer                                               = 0x00200000,   
+        HasOutParms                                             = 0x00400000,   
+        HasDefaults                                             = 0x00800000,
+        NetClient                                               = 0x01000000,
+        DLLImport                                               = 0x02000000,
+        BlueprintCallable                               = 0x04000000,
+        BlueprintEvent                                  = 0x08000000,
+        BlueprintPure                                   = 0x10000000,   
+        EditorOnly                                              = 0x20000000,   
+        Const                                                   = 0x40000000,
+        NetValidate                                             = 0x80000000,
 
-	AllFlags						= 0xFFFFFFFF,
+        AllFlags                                                = 0xFFFFFFFF,
 };
 
 enum class EClassFlags : uint32
 {
-	CLASS_None						= 0x00000000u,
-	Abstract						= 0x00000001u,
-	DefaultConfig					= 0x00000002u,
-	Config							= 0x00000004u,
-	Transient						= 0x00000008u,
-	Parsed							= 0x00000010u,
-	MatchedSerializers				= 0x00000020u,
-	ProjectUserConfig				= 0x00000040u,
-	Native							= 0x00000080u,
-	NoExport						= 0x00000100u,
-	NotPlaceable					= 0x00000200u,
-	PerObjectConfig					= 0x00000400u,
-	ReplicationDataIsSetUp			= 0x00000800u,
-	EditInlineNew					= 0x00001000u,
-	CollapseCategories				= 0x00002000u,
-	Interface						= 0x00004000u,
-	CustomConstructor				= 0x00008000u,
-	Const							= 0x00010000u,
-	LayoutChanging					= 0x00020000u,
-	CompiledFromBlueprint			= 0x00040000u,
-	MinimalAPI						= 0x00080000u,
-	RequiredAPI						= 0x00100000u,
-	DefaultToInstanced				= 0x00200000u,
-	TokenStreamAssembled			= 0x00400000u,
-	HasInstancedReference			= 0x00800000u,
-	Hidden							= 0x01000000u,
-	Deprecated						= 0x02000000u,
-	HideDropDown					= 0x04000000u,
-	GlobalUserConfig				= 0x08000000u,
-	Intrinsic						= 0x10000000u,
-	Constructed						= 0x20000000u,
-	ConfigDoNotCheckDefaults		= 0x40000000u,
-	NewerVersionExists				= 0x80000000u,
+        CLASS_None                                              = 0x00000000u,
+        Abstract                                                = 0x00000001u,
+        DefaultConfig                                   = 0x00000002u,
+        Config                                                  = 0x00000004u,
+        Transient                                               = 0x00000008u,
+        Parsed                                                  = 0x00000010u,
+        MatchedSerializers                              = 0x00000020u,
+        ProjectUserConfig                               = 0x00000040u,
+        Native                                                  = 0x00000080u,
+        NoExport                                                = 0x00000100u,
+        NotPlaceable                                    = 0x00000200u,
+        PerObjectConfig                                 = 0x00000400u,
+        ReplicationDataIsSetUp                  = 0x00000800u,
+        EditInlineNew                                   = 0x00001000u,
+        CollapseCategories                              = 0x00002000u,
+        Interface                                               = 0x00004000u,
+        CustomConstructor                               = 0x00008000u,
+        Const                                                   = 0x00010000u,
+        LayoutChanging                                  = 0x00020000u,
+        CompiledFromBlueprint                   = 0x00040000u,
+        MinimalAPI                                              = 0x00080000u,
+        RequiredAPI                                             = 0x00100000u,
+        DefaultToInstanced                              = 0x00200000u,
+        TokenStreamAssembled                    = 0x00400000u,
+        HasInstancedReference                   = 0x00800000u,
+        Hidden                                                  = 0x01000000u,
+        Deprecated                                              = 0x02000000u,
+        HideDropDown                                    = 0x04000000u,
+        GlobalUserConfig                                = 0x08000000u,
+        Intrinsic                                               = 0x10000000u,
+        Constructed                                             = 0x20000000u,
+        ConfigDoNotCheckDefaults                = 0x40000000u,
+        NewerVersionExists                              = 0x80000000u,
 };
 
 enum class EClassCastFlags : uint64
 {
-	None = 0x0000000000000000,
+        None = 0x0000000000000000,
 
-	Field								= 0x0000000000000001,
-	Int8Property						= 0x0000000000000002,
-	Enum								= 0x0000000000000004,
-	Struct								= 0x0000000000000008,
-	ScriptStruct						= 0x0000000000000010,
-	Class								= 0x0000000000000020,
-	ByteProperty						= 0x0000000000000040,
-	IntProperty							= 0x0000000000000080,
-	FloatProperty						= 0x0000000000000100,
-	UInt64Property						= 0x0000000000000200,
-	ClassProperty						= 0x0000000000000400,
-	UInt32Property						= 0x0000000000000800,
-	InterfaceProperty					= 0x0000000000001000,
-	NameProperty						= 0x0000000000002000,
-	StrProperty							= 0x0000000000004000,
-	Property							= 0x0000000000008000,
-	ObjectProperty						= 0x0000000000010000,
-	BoolProperty						= 0x0000000000020000,
-	UInt16Property						= 0x0000000000040000,
-	Function							= 0x0000000000080000,
-	StructProperty						= 0x0000000000100000,
-	ArrayProperty						= 0x0000000000200000,
-	Int64Property						= 0x0000000000400000,
-	DelegateProperty					= 0x0000000000800000,
-	NumericProperty						= 0x0000000001000000,
-	MulticastDelegateProperty			= 0x0000000002000000,
-	ObjectPropertyBase					= 0x0000000004000000,
-	WeakObjectProperty					= 0x0000000008000000,
-	LazyObjectProperty					= 0x0000000010000000,
-	SoftObjectProperty					= 0x0000000020000000,
-	TextProperty						= 0x0000000040000000,
-	Int16Property						= 0x0000000080000000,
-	DoubleProperty						= 0x0000000100000000,
-	SoftClassProperty					= 0x0000000200000000,
-	Package								= 0x0000000400000000,
-	Level								= 0x0000000800000000,
-	Actor								= 0x0000001000000000,
-	PlayerController					= 0x0000002000000000,
-	Pawn								= 0x0000004000000000,
-	SceneComponent						= 0x0000008000000000,
-	PrimitiveComponent					= 0x0000010000000000,
-	SkinnedMeshComponent				= 0x0000020000000000,
-	SkeletalMeshComponent				= 0x0000040000000000,
-	Blueprint							= 0x0000080000000000,
-	DelegateFunction					= 0x0000100000000000,
-	StaticMeshComponent					= 0x0000200000000000,
-	MapProperty							= 0x0000400000000000,
-	SetProperty							= 0x0000800000000000,
-	EnumProperty						= 0x0001000000000000,
-	USparseDelegateFunction				= 0x0002000000000000,
-	FMulticastInlineDelegateProperty	= 0x0004000000000000,
-	FMulticastSparseDelegateProperty	= 0x0008000000000000,
-	FFieldPathProperty					= 0x0010000000000000,
-	FLargeWorldCoordinatesRealProperty	= 0x0080000000000000,
-	FOptionalProperty					= 0x0100000000000000,
-	FVValueProperty						= 0x0200000000000000,
-	UVerseVMClass						= 0x0400000000000000,
-	FVRestValueProperty					= 0x0800000000000000,
+        Field                                                           = 0x0000000000000001,
+        Int8Property                                            = 0x0000000000000002,
+        Enum                                                            = 0x0000000000000004,
+        Struct                                                          = 0x0000000000000008,
+        ScriptStruct                                            = 0x0000000000000010,
+        Class                                                           = 0x0000000000000020,
+        ByteProperty                                            = 0x0000000000000040,
+        IntProperty                                                     = 0x0000000000000080,
+        FloatProperty                                           = 0x0000000000000100,
+        UInt64Property                                          = 0x0000000000000200,
+        ClassProperty                                           = 0x0000000000000400,
+        UInt32Property                                          = 0x0000000000000800,
+        InterfaceProperty                                       = 0x0000000000001000,
+        NameProperty                                            = 0x0000000000002000,
+        StrProperty                                                     = 0x0000000000004000,
+        Property                                                        = 0x0000000000008000,
+        ObjectProperty                                          = 0x0000000000010000,
+        BoolProperty                                            = 0x0000000000020000,
+        UInt16Property                                          = 0x0000000000040000,
+        Function                                                        = 0x0000000000080000,
+        StructProperty                                          = 0x0000000000100000,
+        ArrayProperty                                           = 0x0000000000200000,
+        Int64Property                                           = 0x0000000000400000,
+        DelegateProperty                                        = 0x0000000000800000,
+        NumericProperty                                         = 0x0000000001000000,
+        MulticastDelegateProperty                       = 0x0000000002000000,
+        ObjectPropertyBase                                      = 0x0000000004000000,
+        WeakObjectProperty                                      = 0x0000000008000000,
+        LazyObjectProperty                                      = 0x0000000010000000,
+        SoftObjectProperty                                      = 0x0000000020000000,
+        TextProperty                                            = 0x0000000040000000,
+        Int16Property                                           = 0x0000000080000000,
+        DoubleProperty                                          = 0x0000000100000000,
+        SoftClassProperty                                       = 0x0000000200000000,
+        Package                                                         = 0x0000000400000000,
+        Level                                                           = 0x0000000800000000,
+        Actor                                                           = 0x0000001000000000,
+        PlayerController                                        = 0x0000002000000000,
+        Pawn                                                            = 0x0000004000000000,
+        SceneComponent                                          = 0x0000008000000000,
+        PrimitiveComponent                                      = 0x0000010000000000,
+        SkinnedMeshComponent                            = 0x0000020000000000,
+        SkeletalMeshComponent                           = 0x0000040000000000,
+        Blueprint                                                       = 0x0000080000000000,
+        DelegateFunction                                        = 0x0000100000000000,
+        StaticMeshComponent                                     = 0x0000200000000000,
+        MapProperty                                                     = 0x0000400000000000,
+        SetProperty                                                     = 0x0000800000000000,
+        EnumProperty                                            = 0x0001000000000000,
+        USparseDelegateFunction                         = 0x0002000000000000,
+        FMulticastInlineDelegateProperty        = 0x0004000000000000,
+        FMulticastSparseDelegateProperty        = 0x0008000000000000,
+        FFieldPathProperty                                      = 0x0010000000000000,
+        FLargeWorldCoordinatesRealProperty      = 0x0080000000000000,
+        FOptionalProperty                                       = 0x0100000000000000,
+        FVValueProperty                                         = 0x0200000000000000,
+        UVerseVMClass                                           = 0x0400000000000000,
+        FVRestValueProperty                                     = 0x0800000000000000,
 };
 
 enum class EPropertyFlags : uint64
 {
-	None								= 0x0000000000000000,
+        None                                                            = 0x0000000000000000,
 
-	Edit								= 0x0000000000000001,
-	ConstParm							= 0x0000000000000002,
-	BlueprintVisible					= 0x0000000000000004,
-	ExportObject						= 0x0000000000000008,
-	BlueprintReadOnly					= 0x0000000000000010,
-	Net									= 0x0000000000000020,
-	EditFixedSize						= 0x0000000000000040,
-	Parm								= 0x0000000000000080,
-	OutParm								= 0x0000000000000100,
-	ZeroConstructor						= 0x0000000000000200,
-	ReturnParm							= 0x0000000000000400,
-	DisableEditOnTemplate 				= 0x0000000000000800,
+        Edit                                                            = 0x0000000000000001,
+        ConstParm                                                       = 0x0000000000000002,
+        BlueprintVisible                                        = 0x0000000000000004,
+        ExportObject                                            = 0x0000000000000008,
+        BlueprintReadOnly                                       = 0x0000000000000010,
+        Net                                                                     = 0x0000000000000020,
+        EditFixedSize                                           = 0x0000000000000040,
+        Parm                                                            = 0x0000000000000080,
+        OutParm                                                         = 0x0000000000000100,
+        ZeroConstructor                                         = 0x0000000000000200,
+        ReturnParm                                                      = 0x0000000000000400,
+        DisableEditOnTemplate                           = 0x0000000000000800,
 
-	Transient							= 0x0000000000002000,
-	Config								= 0x0000000000004000,
+        Transient                                                       = 0x0000000000002000,
+        Config                                                          = 0x0000000000004000,
 
-	DisableEditOnInstance				= 0x0000000000010000,
-	EditConst							= 0x0000000000020000,
-	GlobalConfig						= 0x0000000000040000,
-	InstancedReference					= 0x0000000000080000,	
+        DisableEditOnInstance                           = 0x0000000000010000,
+        EditConst                                                       = 0x0000000000020000,
+        GlobalConfig                                            = 0x0000000000040000,
+        InstancedReference                                      = 0x0000000000080000,   
 
-	DuplicateTransient					= 0x0000000000200000,	
-	SubobjectReference					= 0x0000000000400000,	
+        DuplicateTransient                                      = 0x0000000000200000,   
+        SubobjectReference                                      = 0x0000000000400000,   
 
-	SaveGame							= 0x0000000001000000,
-	NoClear								= 0x0000000002000000,
+        SaveGame                                                        = 0x0000000001000000,
+        NoClear                                                         = 0x0000000002000000,
 
-	ReferenceParm						= 0x0000000008000000,
-	BlueprintAssignable					= 0x0000000010000000,
-	Deprecated							= 0x0000000020000000,
-	IsPlainOldData						= 0x0000000040000000,
-	RepSkip								= 0x0000000080000000,
-	RepNotify							= 0x0000000100000000, 
-	Interp								= 0x0000000200000000,
-	NonTransactional					= 0x0000000400000000,
-	EditorOnly							= 0x0000000800000000,
-	NoDestructor						= 0x0000001000000000,
+        ReferenceParm                                           = 0x0000000008000000,
+        BlueprintAssignable                                     = 0x0000000010000000,
+        Deprecated                                                      = 0x0000000020000000,
+        IsPlainOldData                                          = 0x0000000040000000,
+        RepSkip                                                         = 0x0000000080000000,
+        RepNotify                                                       = 0x0000000100000000, 
+        Interp                                                          = 0x0000000200000000,
+        NonTransactional                                        = 0x0000000400000000,
+        EditorOnly                                                      = 0x0000000800000000,
+        NoDestructor                                            = 0x0000001000000000,
 
-	AutoWeak							= 0x0000004000000000,
-	ContainsInstancedReference			= 0x0000008000000000,	
-	AssetRegistrySearchable				= 0x0000010000000000,
-	SimpleDisplay						= 0x0000020000000000,
-	AdvancedDisplay						= 0x0000040000000000,
-	Protected							= 0x0000080000000000,
-	BlueprintCallable					= 0x0000100000000000,
-	BlueprintAuthorityOnly				= 0x0000200000000000,
-	TextExportTransient					= 0x0000400000000000,
-	NonPIEDuplicateTransient			= 0x0000800000000000,
-	ExposeOnSpawn						= 0x0001000000000000,
-	PersistentInstance					= 0x0002000000000000,
-	UObjectWrapper						= 0x0004000000000000, 
-	HasGetValueTypeHash					= 0x0008000000000000, 
-	NativeAccessSpecifierPublic			= 0x0010000000000000,	
-	NativeAccessSpecifierProtected		= 0x0020000000000000,
-	NativeAccessSpecifierPrivate		= 0x0040000000000000,	
-	SkipSerialization					= 0x0080000000000000, 
+        AutoWeak                                                        = 0x0000004000000000,
+        ContainsInstancedReference                      = 0x0000008000000000,   
+        AssetRegistrySearchable                         = 0x0000010000000000,
+        SimpleDisplay                                           = 0x0000020000000000,
+        AdvancedDisplay                                         = 0x0000040000000000,
+        Protected                                                       = 0x0000080000000000,
+        BlueprintCallable                                       = 0x0000100000000000,
+        BlueprintAuthorityOnly                          = 0x0000200000000000,
+        TextExportTransient                                     = 0x0000400000000000,
+        NonPIEDuplicateTransient                        = 0x0000800000000000,
+        ExposeOnSpawn                                           = 0x0001000000000000,
+        PersistentInstance                                      = 0x0002000000000000,
+        UObjectWrapper                                          = 0x0004000000000000, 
+        HasGetValueTypeHash                                     = 0x0008000000000000, 
+        NativeAccessSpecifierPublic                     = 0x0010000000000000,   
+        NativeAccessSpecifierProtected          = 0x0020000000000000,
+        NativeAccessSpecifierPrivate            = 0x0040000000000000,   
+        SkipSerialization                                       = 0x0080000000000000, 
 };
 
 UE_ENUM_OPERATORS(EObjectFlags);
@@ -1031,12 +1173,12 @@ UE_ENUM_OPERATORS(EPropertyFlags);
 class FFieldClass
 {
 public:
-	FName                                         Name;                                              // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	uint64                                        Id;                                                // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	uint64                                        CastFlags;                                         // 0x0010(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	EClassFlags                                   ClassFlags;                                        // 0x0018(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         Pad_1C[0x4];                                       // 0x001C(0x0004)(Fixing Size After Last Property [ Dumper-7 ])
-	class FFieldClass*                            SuperClass;                                        // 0x0020(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        FName                                         Name;                                              // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        uint64                                        Id;                                                // 0x0008(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        uint64                                        CastFlags;                                         // 0x0010(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        EClassFlags                                   ClassFlags;                                        // 0x0018(0x0004)(NOT AUTO-GENERATED PROPERTY)
+        uint8                                         Pad_1C[0x4];                                       // 0x001C(0x0004)(Fixing Size After Last Property [ Dumper-7 ])
+        class FFieldClass*                            SuperClass;                                        // 0x0020(0x0008)(NOT AUTO-GENERATED PROPERTY)
 };
 static_assert(alignof(FFieldClass) == 0x000008, "Wrong alignment on FFieldClass");
 static_assert(sizeof(FFieldClass) == 0x000028, "Wrong size on FFieldClass");
@@ -1051,10 +1193,10 @@ static_assert(offsetof(FFieldClass, SuperClass) == 0x000020, "Member 'FFieldClas
 class FFieldVariant
 {
 public:
-	using ContainerType = union { class FField* Field; class UObject* Object; };                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        using ContainerType = union { class FField* Field; class UObject* Object; };                     // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
 
-	ContainerType                                 Container;                                         // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	bool                                          bIsUObject;                                        // 0x0008(0x0001)(NOT AUTO-GENERATED PROPERTY)
+        ContainerType                                 Container;                                         // 0x0000(0x0008)(NOT AUTO-GENERATED PROPERTY)
+        bool                                          bIsUObject;                                        // 0x0008(0x0001)(NOT AUTO-GENERATED PROPERTY)
 };
 static_assert(alignof(FFieldVariant) == 0x000008, "Wrong alignment on FFieldVariant");
 static_assert(sizeof(FFieldVariant) == 0x000010, "Wrong size on FFieldVariant");
@@ -1062,7 +1204,8 @@ static_assert(offsetof(FFieldVariant, Container) == 0x000000, "Member 'FFieldVar
 static_assert(offsetof(FFieldVariant, bIsUObject) == 0x000008, "Member 'FFieldVariant::bIsUObject' has a wrong offset!");
 
 // Predefined struct FField
-// 0x0038 (0x0038 - 0x0000)
+// PC: 0x0038 | Android: 0x0030 (no ObjFlags member — confirmed by the on-device
+// 12.41 dump: FProperty::ArrayDim @ 0x30, Property::SizeOf(FProperty) = 0x70)
 class FField
 {
 public:
@@ -1071,8 +1214,19 @@ public:
 	FFieldVariant                                 Owner;                                             // 0x0010(0x0010)(NOT AUTO-GENERATED PROPERTY)
 	class FField*                                 Next;                                              // 0x0020(0x0008)(NOT AUTO-GENERATED PROPERTY)
 	FName                                         Name;                                              // 0x0028(0x0008)(NOT AUTO-GENERATED PROPERTY)
+#ifndef __ANDROID__
 	int32                                         ObjFlags;                                          // 0x0030(0x0004)(NOT AUTO-GENERATED PROPERTY)
+#endif
 };
+#ifdef __ANDROID__
+static_assert(alignof(FField) == 0x000008, "Wrong alignment on FField");
+static_assert(sizeof(FField) == 0x000030, "Wrong size on FField");
+static_assert(offsetof(FField, VTable) == 0x000000, "Member 'FField::VTable' has a wrong offset!");
+static_assert(offsetof(FField, ClassPrivate) == 0x000008, "Member 'FField::ClassPrivate' has a wrong offset!");
+static_assert(offsetof(FField, Owner) == 0x000010, "Member 'FField::Owner' has a wrong offset!");
+static_assert(offsetof(FField, Next) == 0x000020, "Member 'FField::Next' has a wrong offset!");
+static_assert(offsetof(FField, Name) == 0x000028, "Member 'FField::Name' has a wrong offset!");
+#else
 static_assert(alignof(FField) == 0x000008, "Wrong alignment on FField");
 static_assert(sizeof(FField) == 0x000038, "Wrong size on FField");
 static_assert(offsetof(FField, VTable) == 0x000000, "Member 'FField::VTable' has a wrong offset!");
@@ -1081,167 +1235,188 @@ static_assert(offsetof(FField, Owner) == 0x000010, "Member 'FField::Owner' has a
 static_assert(offsetof(FField, Next) == 0x000020, "Member 'FField::Next' has a wrong offset!");
 static_assert(offsetof(FField, Name) == 0x000028, "Member 'FField::Name' has a wrong offset!");
 static_assert(offsetof(FField, ObjFlags) == 0x000030, "Member 'FField::ObjFlags' has a wrong offset!");
+#endif
+
+// On-device 12.41 Android dump (SDK-AndroidReference/MobileDumper7.log):
+//   Property.ArrayDim = 0x30, Property.ElementSize = 0x34, Property.PropertyFlags = 0x38,
+//   Property.Offset_Internal = 0x44, Property.SizeOf = 0x70,
+//   every F*Property first member @ 0x70 (ClassProperty.MetaClass @ 0x78).
+#ifdef __ANDROID__
+#define OGS_FPROP_BASE   0x70
+#define OGS_FPROP_BASE2  0x78
+#define OGS_FPROP_SIZE1  0x78
+#define OGS_FPROP_SIZE2  0x80
+#else
+#define OGS_FPROP_BASE   0x78
+#define OGS_FPROP_BASE2  0x80
+#define OGS_FPROP_SIZE1  0x80
+#define OGS_FPROP_SIZE2  0x88
+#endif
 
 // Predefined struct FProperty
-// 0x0040 (0x0078 - 0x0038)
+// PC: 0x0078 | Android: 0x0070
 class FProperty : public FField
 {
 public:
-	int32                                         ArrayDim;                                          // 0x0038(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	int32                                         ElementSize;                                       // 0x003C(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint64                                        PropertyFlags;                                     // 0x0040(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         Pad_48[0x4];                                       // 0x0048(0x0004)(Fixing Size After Last Property [ Dumper-7 ])
-	int32                                         Offset;                                            // 0x004C(0x0004)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         Pad_50[0x28];                                      // 0x0050(0x0028)(Fixing Struct Size After Last Property [ Dumper-7 ])
+	int32                                         ArrayDim;                                          // PC 0x0038 | Android 0x0030
+	int32                                         ElementSize;                                       // PC 0x003C | Android 0x0034
+	uint64                                        PropertyFlags;                                     // PC 0x0040 | Android 0x0038
+#ifndef __ANDROID__
+	uint8                                         Pad_48[0x4];                                       // 0x0048(0x0004)(RepIndex)
+	int32                                         Offset;                                            // 0x004C(0x0004)
+	uint8                                         Pad_50[0x28];                                      // 0x0050(0x0028)
+#else
+	uint8                                         Pad_40[0x4];                                       // 0x0040(0x0004)(RepIndex)
+	int32                                         Offset;                                            // 0x0044(0x0004)
+	uint8                                         Pad_48[0x28];                                      // 0x0048(0x0028)
+#endif
 };
+#ifdef __ANDROID__
+static_assert(alignof(FProperty) == 0x000008, "Wrong alignment on FProperty");
+static_assert(sizeof(FProperty) == 0x000070, "Wrong size on FProperty");
+static_assert(offsetof(FProperty, ArrayDim) == 0x000030, "Member 'FProperty::ArrayDim' has a wrong offset!");
+static_assert(offsetof(FProperty, ElementSize) == 0x000034, "Member 'FProperty::ElementSize' has a wrong offset!");
+static_assert(offsetof(FProperty, PropertyFlags) == 0x000038, "Member 'FProperty::PropertyFlags' has a wrong offset!");
+static_assert(offsetof(FProperty, Offset) == 0x000044, "Member 'FProperty::Offset' has a wrong offset!");
+#else
 static_assert(alignof(FProperty) == 0x000008, "Wrong alignment on FProperty");
 static_assert(sizeof(FProperty) == 0x000078, "Wrong size on FProperty");
 static_assert(offsetof(FProperty, ArrayDim) == 0x000038, "Member 'FProperty::ArrayDim' has a wrong offset!");
 static_assert(offsetof(FProperty, ElementSize) == 0x00003C, "Member 'FProperty::ElementSize' has a wrong offset!");
 static_assert(offsetof(FProperty, PropertyFlags) == 0x000040, "Member 'FProperty::PropertyFlags' has a wrong offset!");
 static_assert(offsetof(FProperty, Offset) == 0x00004C, "Member 'FProperty::Offset' has a wrong offset!");
+#endif
 
 // Predefined struct FByteProperty
-// 0x0008 (0x0080 - 0x0078)
 class FByteProperty final : public FProperty
 {
 public:
-	class UEnum*                                  Enum;                                              // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class UEnum*                                  Enum;
 };
 static_assert(alignof(FByteProperty) == 0x000008, "Wrong alignment on FByteProperty");
-static_assert(sizeof(FByteProperty) == 0x000080, "Wrong size on FByteProperty");
-static_assert(offsetof(FByteProperty, Enum) == 0x000078, "Member 'FByteProperty::Enum' has a wrong offset!");
+static_assert(sizeof(FByteProperty) == OGS_FPROP_SIZE1, "Wrong size on FByteProperty");
+static_assert(offsetof(FByteProperty, Enum) == OGS_FPROP_BASE, "Member 'FByteProperty::Enum' has a wrong offset!");
 
 // Predefined struct FBoolProperty
-// 0x0008 (0x0080 - 0x0078)
+// PC 0x0080 | Android 0x0078 (dump: BoolProperty.Base = 0x70)
 class FBoolProperty final : public FProperty
 {
 public:
-	uint8                                         FieldSize;                                         // 0x0078(0x0001)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         ByteOffset;                                        // 0x0079(0x0001)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         ByteMask;                                          // 0x007A(0x0001)(NOT AUTO-GENERATED PROPERTY)
-	uint8                                         FieldMask;                                         // 0x007B(0x0001)(NOT AUTO-GENERATED PROPERTY)
+	uint8                                         FieldSize;                                         // PC 0x0078 | Android 0x0070
+	uint8                                         ByteOffset;                                        // PC 0x0079 | Android 0x0071
+	uint8                                         ByteMask;                                          // PC 0x007A | Android 0x0072
+	uint8                                         FieldMask;                                         // PC 0x007B | Android 0x0073
 };
 static_assert(alignof(FBoolProperty) == 0x000008, "Wrong alignment on FBoolProperty");
-static_assert(sizeof(FBoolProperty) == 0x000080, "Wrong size on FBoolProperty");
-static_assert(offsetof(FBoolProperty, FieldSize) == 0x000078, "Member 'FBoolProperty::FieldSize' has a wrong offset!");
-static_assert(offsetof(FBoolProperty, ByteOffset) == 0x000079, "Member 'FBoolProperty::ByteOffset' has a wrong offset!");
-static_assert(offsetof(FBoolProperty, ByteMask) == 0x00007A, "Member 'FBoolProperty::ByteMask' has a wrong offset!");
-static_assert(offsetof(FBoolProperty, FieldMask) == 0x00007B, "Member 'FBoolProperty::FieldMask' has a wrong offset!");
+static_assert(sizeof(FBoolProperty) == OGS_FPROP_SIZE1, "Wrong size on FBoolProperty");
+static_assert(offsetof(FBoolProperty, FieldSize) == OGS_FPROP_BASE, "Member 'FBoolProperty::FieldSize' has a wrong offset!");
+static_assert(offsetof(FBoolProperty, ByteOffset) == (OGS_FPROP_BASE + 1), "Member 'FBoolProperty::ByteOffset' has a wrong offset!");
+static_assert(offsetof(FBoolProperty, ByteMask) == (OGS_FPROP_BASE + 2), "Member 'FBoolProperty::ByteMask' has a wrong offset!");
+static_assert(offsetof(FBoolProperty, FieldMask) == (OGS_FPROP_BASE + 3), "Member 'FBoolProperty::FieldMask' has a wrong offset!");
 
 // Predefined struct FObjectPropertyBase
-// 0x0008 (0x0080 - 0x0078)
 class FObjectPropertyBase : public FProperty
 {
 public:
-	class UClass*                                 PropertyClass;                                     // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class UClass*                                 PropertyClass;
 };
 static_assert(alignof(FObjectPropertyBase) == 0x000008, "Wrong alignment on FObjectPropertyBase");
-static_assert(sizeof(FObjectPropertyBase) == 0x000080, "Wrong size on FObjectPropertyBase");
-static_assert(offsetof(FObjectPropertyBase, PropertyClass) == 0x000078, "Member 'FObjectPropertyBase::PropertyClass' has a wrong offset!");
+static_assert(sizeof(FObjectPropertyBase) == OGS_FPROP_SIZE1, "Wrong size on FObjectPropertyBase");
+static_assert(offsetof(FObjectPropertyBase, PropertyClass) == OGS_FPROP_BASE, "Member 'FObjectPropertyBase::PropertyClass' has a wrong offset!");
 
 // Predefined struct FClassProperty
-// 0x0008 (0x0088 - 0x0080)
 class FClassProperty final : public FObjectPropertyBase
 {
 public:
-	class UClass*                                 MetaClass;                                         // 0x0080(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class UClass*                                 MetaClass;
 };
 static_assert(alignof(FClassProperty) == 0x000008, "Wrong alignment on FClassProperty");
-static_assert(sizeof(FClassProperty) == 0x000088, "Wrong size on FClassProperty");
-static_assert(offsetof(FClassProperty, MetaClass) == 0x000080, "Member 'FClassProperty::MetaClass' has a wrong offset!");
+static_assert(sizeof(FClassProperty) == OGS_FPROP_SIZE2, "Wrong size on FClassProperty");
+static_assert(offsetof(FClassProperty, MetaClass) == OGS_FPROP_BASE2, "Member 'FClassProperty::MetaClass' has a wrong offset!");
 
 // Predefined struct FStructProperty
-// 0x0008 (0x0080 - 0x0078)
 class FStructProperty final : public FProperty
 {
 public:
-	class UStruct*                                Struct;                                            // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class UStruct*                                Struct;
 };
 static_assert(alignof(FStructProperty) == 0x000008, "Wrong alignment on FStructProperty");
-static_assert(sizeof(FStructProperty) == 0x000080, "Wrong size on FStructProperty");
-static_assert(offsetof(FStructProperty, Struct) == 0x000078, "Member 'FStructProperty::Struct' has a wrong offset!");
+static_assert(sizeof(FStructProperty) == OGS_FPROP_SIZE1, "Wrong size on FStructProperty");
+static_assert(offsetof(FStructProperty, Struct) == OGS_FPROP_BASE, "Member 'FStructProperty::Struct' has a wrong offset!");
 
 // Predefined struct FArrayProperty
-// 0x0008 (0x0080 - 0x0078)
 class FArrayProperty final : public FProperty
 {
 public:
-	struct FProperty*                             InnerProperty;                                     // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	struct FProperty*                             InnerProperty;
 };
 static_assert(alignof(FArrayProperty) == 0x000008, "Wrong alignment on FArrayProperty");
-static_assert(sizeof(FArrayProperty) == 0x000080, "Wrong size on FArrayProperty");
-static_assert(offsetof(FArrayProperty, InnerProperty) == 0x000078, "Member 'FArrayProperty::InnerProperty' has a wrong offset!");
+static_assert(sizeof(FArrayProperty) == OGS_FPROP_SIZE1, "Wrong size on FArrayProperty");
+static_assert(offsetof(FArrayProperty, InnerProperty) == OGS_FPROP_BASE, "Member 'FArrayProperty::InnerProperty' has a wrong offset!");
 
 // Predefined struct FDelegateProperty
-// 0x0008 (0x0080 - 0x0078)
 class FDelegateProperty final : public FProperty
 {
 public:
-	class UFunction*                              SignatureFunction;                                 // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class UFunction*                              SignatureFunction;
 };
 static_assert(alignof(FDelegateProperty) == 0x000008, "Wrong alignment on FDelegateProperty");
-static_assert(sizeof(FDelegateProperty) == 0x000080, "Wrong size on FDelegateProperty");
-static_assert(offsetof(FDelegateProperty, SignatureFunction) == 0x000078, "Member 'FDelegateProperty::SignatureFunction' has a wrong offset!");
+static_assert(sizeof(FDelegateProperty) == OGS_FPROP_SIZE1, "Wrong size on FDelegateProperty");
+static_assert(offsetof(FDelegateProperty, SignatureFunction) == OGS_FPROP_BASE, "Member 'FDelegateProperty::SignatureFunction' has a wrong offset!");
 
 // Predefined struct FMapProperty
-// 0x0010 (0x0088 - 0x0078)
 class FMapProperty final : public FProperty
 {
 public:
-	struct FProperty*                             KeyProperty;                                       // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	struct FProperty*                             ValueProperty;                                     // 0x0080(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	struct FProperty*                             KeyProperty;
+	struct FProperty*                             ValueProperty;
 };
 static_assert(alignof(FMapProperty) == 0x000008, "Wrong alignment on FMapProperty");
-static_assert(sizeof(FMapProperty) == 0x000088, "Wrong size on FMapProperty");
-static_assert(offsetof(FMapProperty, KeyProperty) == 0x000078, "Member 'FMapProperty::KeyProperty' has a wrong offset!");
-static_assert(offsetof(FMapProperty, ValueProperty) == 0x000080, "Member 'FMapProperty::ValueProperty' has a wrong offset!");
+static_assert(sizeof(FMapProperty) == OGS_FPROP_SIZE2, "Wrong size on FMapProperty");
+static_assert(offsetof(FMapProperty, KeyProperty) == OGS_FPROP_BASE, "Member 'FMapProperty::KeyProperty' has a wrong offset!");
+static_assert(offsetof(FMapProperty, ValueProperty) == OGS_FPROP_BASE2, "Member 'FMapProperty::ValueProperty' has a wrong offset!");
 
 // Predefined struct FSetProperty
-// 0x0008 (0x0080 - 0x0078)
 class FSetProperty final : public FProperty
 {
 public:
-	struct FProperty*                             ElementProperty;                                   // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	struct FProperty*                             ElementProperty;
 };
 static_assert(alignof(FSetProperty) == 0x000008, "Wrong alignment on FSetProperty");
-static_assert(sizeof(FSetProperty) == 0x000080, "Wrong size on FSetProperty");
-static_assert(offsetof(FSetProperty, ElementProperty) == 0x000078, "Member 'FSetProperty::ElementProperty' has a wrong offset!");
+static_assert(sizeof(FSetProperty) == OGS_FPROP_SIZE1, "Wrong size on FSetProperty");
+static_assert(offsetof(FSetProperty, ElementProperty) == OGS_FPROP_BASE, "Member 'FSetProperty::ElementProperty' has a wrong offset!");
 
 // Predefined struct FEnumProperty
-// 0x0010 (0x0088 - 0x0078)
 class FEnumProperty final : public FProperty
 {
 public:
-	struct FProperty*                             UnderlayingProperty;                               // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
-	class UEnum*                                  Enum;                                              // 0x0080(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	struct FProperty*                             UnderlayingProperty;
+	class UEnum*                                  Enum;
 };
 static_assert(alignof(FEnumProperty) == 0x000008, "Wrong alignment on FEnumProperty");
-static_assert(sizeof(FEnumProperty) == 0x000088, "Wrong size on FEnumProperty");
-static_assert(offsetof(FEnumProperty, UnderlayingProperty) == 0x000078, "Member 'FEnumProperty::UnderlayingProperty' has a wrong offset!");
-static_assert(offsetof(FEnumProperty, Enum) == 0x000080, "Member 'FEnumProperty::Enum' has a wrong offset!");
+static_assert(sizeof(FEnumProperty) == OGS_FPROP_SIZE2, "Wrong size on FEnumProperty");
+static_assert(offsetof(FEnumProperty, UnderlayingProperty) == OGS_FPROP_BASE, "Member 'FEnumProperty::UnderlayingProperty' has a wrong offset!");
+static_assert(offsetof(FEnumProperty, Enum) == OGS_FPROP_BASE2, "Member 'FEnumProperty::Enum' has a wrong offset!");
 
 // Predefined struct FFieldPathProperty
-// 0x0008 (0x0080 - 0x0078)
 class FFieldPathProperty final : public FProperty
 {
 public:
-	class FFieldClass*                            FieldClass;                                        // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	class FFieldClass*                            FieldClass;
 };
 static_assert(alignof(FFieldPathProperty) == 0x000008, "Wrong alignment on FFieldPathProperty");
-static_assert(sizeof(FFieldPathProperty) == 0x000080, "Wrong size on FFieldPathProperty");
-static_assert(offsetof(FFieldPathProperty, FieldClass) == 0x000078, "Member 'FFieldPathProperty::FieldClass' has a wrong offset!");
+static_assert(sizeof(FFieldPathProperty) == OGS_FPROP_SIZE1, "Wrong size on FFieldPathProperty");
+static_assert(offsetof(FFieldPathProperty, FieldClass) == OGS_FPROP_BASE, "Member 'FFieldPathProperty::FieldClass' has a wrong offset!");
 
 // Predefined struct FOptionalProperty
-// 0x0008 (0x0080 - 0x0078)
 class FOptionalProperty final : public FProperty
 {
 public:
-	struct FProperty*                             ValueProperty;                                     // 0x0078(0x0008)(NOT AUTO-GENERATED PROPERTY)
+	struct FProperty*                             ValueProperty;
 };
 static_assert(alignof(FOptionalProperty) == 0x000008, "Wrong alignment on FOptionalProperty");
-static_assert(sizeof(FOptionalProperty) == 0x000080, "Wrong size on FOptionalProperty");
-static_assert(offsetof(FOptionalProperty, ValueProperty) == 0x000078, "Member 'FOptionalProperty::ValueProperty' has a wrong offset!");
+static_assert(sizeof(FOptionalProperty) == OGS_FPROP_SIZE1, "Wrong size on FOptionalProperty");
+static_assert(offsetof(FOptionalProperty, ValueProperty) == OGS_FPROP_BASE, "Member 'FOptionalProperty::ValueProperty' has a wrong offset!");
 
 namespace CyclicDependencyFixupImpl
 {
@@ -1253,11 +1428,11 @@ template<typename UnderlayingStructType, int32 Size, int32 Align>
 struct alignas(Align) TCylicStructFixup
 {
 private:
-	uint8 Pad[Size];
+        uint8 Pad[Size];
 
 public:
-	      UnderlayingStructType& GetTyped()       { return reinterpret_cast<      UnderlayingStructType&>(*this); }
-	const UnderlayingStructType& GetTyped() const { return reinterpret_cast<const UnderlayingStructType&>(*this); }
+              UnderlayingStructType& GetTyped()       { return reinterpret_cast<      UnderlayingStructType&>(*this); }
+        const UnderlayingStructType& GetTyped() const { return reinterpret_cast<const UnderlayingStructType&>(*this); }
 };
 
 /*
@@ -1267,11 +1442,11 @@ template<typename UnderlayingClassType, int32 Size, int32 Align = 0x8, class Bas
 struct alignas(Align) TCyclicClassFixup : public BaseClassType
 {
 private:
-	uint8 Pad[Size];
+        uint8 Pad[Size];
 
 public:
-	UnderlayingClassType*       GetTyped()       { return reinterpret_cast<      UnderlayingClassType*>(this); }
-	const UnderlayingClassType* GetTyped() const { return reinterpret_cast<const UnderlayingClassType*>(this); }
+        UnderlayingClassType*       GetTyped()       { return reinterpret_cast<      UnderlayingClassType*>(this); }
+        const UnderlayingClassType* GetTyped() const { return reinterpret_cast<const UnderlayingClassType*>(this); }
 };
 
 }

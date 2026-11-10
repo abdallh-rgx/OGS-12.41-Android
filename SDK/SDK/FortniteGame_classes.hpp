@@ -33303,7 +33303,11 @@ namespace SDK
 		{
 			return GetDefaultObjImpl<UCustomCharacterPartAnimInstance_BuffcatFaceAcc>();
 		}
-	};
+	
+#ifdef __ANDROID__
+	uint8 OGS_ClangTailPad[8]; // OGS-CLANG-TAILPAD-UCustomCharacterPartAnimInstance_BuffcatFaceAcc (Itanium tail-reuse fix)
+#endif
+};
 	static_assert(alignof(UCustomCharacterPartAnimInstance_BuffcatFaceAcc) == 0x000010, "Wrong alignment on UCustomCharacterPartAnimInstance_BuffcatFaceAcc");
 	static_assert(sizeof(UCustomCharacterPartAnimInstance_BuffcatFaceAcc) == 0x000420, "Wrong size on UCustomCharacterPartAnimInstance_BuffcatFaceAcc");
 

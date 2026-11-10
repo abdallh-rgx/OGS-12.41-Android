@@ -12,15 +12,27 @@
 namespace SDK
 {
 
+#ifdef __ANDROID__
 class alignas(0x01) FMulticastSparseDelegateProperty_
 {
-	unsigned __int8 Pad[0x1];
+        uint8_t Pad[0x1];
 };
 
 class alignas(0x08) FMulticastInlineDelegateProperty_
 {
-	unsigned __int8 Pad[0x10];
+        uint8_t Pad[0x10];
 };
+#else
+class alignas(0x01) FMulticastSparseDelegateProperty_
+{
+        unsigned __int8 Pad[0x1];
+};
+
+class alignas(0x08) FMulticastInlineDelegateProperty_
+{
+        unsigned __int8 Pad[0x10];
+};
+#endif
 
 }
 
