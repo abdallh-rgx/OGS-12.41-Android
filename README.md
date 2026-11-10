@@ -60,9 +60,39 @@ tools/          APK patcher, anchor analyzer, angr/Z3 hook verification
 upstream/       Untouched PC reference source (OGS-12.41)
 ```
 
-## Hook verification (angr / Z3)
+## Verification — angr + Z3 (all green)
 
-`tools/verify_hooks_angr.py` symbolically verifies every runtime resolution rule the port uses
-(BL/PC-relative math, ADRP page computation, trampoline dispatch), and `tools/verify_offsets.py`
-Z3-proves the offset algebra (`runtime address == ImageBase + RVA`, chunked-array indexing,
-FNamePool block decode) against the recorded dump values.
+**`tools/verify_offsets_z3.py`** — 34 Z3 proofs of the offset algebra against the recorded
+on-device dump values (all `unsat` — no counterexamples): runtime addresses, chunked
+TUObjectArray bijection + bounds, FNamePool block decode (spot-checked against every
+NameIndices.h entry), FName entry header math, ProcessEvent vtable slot, FProperty layout.
+
+**`tools/verify_hooks_angr.py`** — angr loads the **built `libOGS-12.41.so`** and symbolically
+proves the **compiled** ARM64 hook engine (the exact RT decoders + encoders the runtime uses,
+exported by `src/Verification.cpp`) equivalent to the ARM architecture specification for **all**
+encodings: IsBL/IsB/IsADRP classifiers, BranchTarget / ADRPPage / ADRImm PC-relative math,
+and the hook dispatch encoding (`LDR X17,#8 ; BR X17 ; .quad detour`).
+
+```
+python3 tools/verify_offsets_z3.py                 # 34 proofs — all PASS
+python3 tools/verify_hooks_angr.py build/libOGS-12.41.so   # V1–V7 — all PASS
+```
+
+## Inject into the APK
+
+```bash
+tools/patch_apk.sh Fortnite-12.41.apk build/libOGS-12.41.so OGS-12.41-patched.apk
+adb install -r OGS-12.41-patched.apk
+adb logcat -s OGS
+```
+
+## Status
+
+- [x] Full Dumper-7 SDK compiles for Android ARM64 (5,617 files, verified offsets)
+- [x] All 21 OGS PC modules ported 1:1 (hooks keyed by PC RVA, resolved at runtime)
+- [x] Listen server (NM_ListenServer — host keeps playing, 0.0.0.0:7777)
+- [x] 4-finger / 2-second touch gesture → English GUI (mode select + join by IP)
+- [x] Log file: `/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/OGS-12.41.log`
+- [x] CI: GitHub Actions builds on every push → artifact `libOGS-12.41-arm64`
+- [x] Z3 + angr mathematical verification suites (all passing)
+- [ ] On-device smoke test on a real 12.41 install (needs the APK + device)
