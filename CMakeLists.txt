@@ -11,24 +11,54 @@ set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 # ── OGS Android library ────────────────────────────────────────────────────
 add_library(OGS-12.41 SHARED
     src/main.cpp
-    src/PE.cpp
     src/NativeResolver.cpp
-    src/ModuleHooks.cpp
     src/GuiTouchInput.cpp
     src/GuiMenu.cpp
     src/GuiRenderer.cpp
     src/ListenServer.cpp
-    src/JoinByIP.cpp
-    src/AndroidGlue.cpp
+    src/ImGui/imgui.cpp
+    src/ImGui/imgui_draw.cpp
+    src/ImGui/imgui_tables.cpp
+    src/ImGui/imgui_widgets.cpp
     platform/erbium/HookingARM64.cpp
     platform/erbium/Finders-Android.cpp
+    # SDK function implementations — the set the PC project compiled, with
+    # the huge files split into memory-sized TUs (scripts/split_sdk_functions.py)
+    SDK/SDK/Basic.cpp
+    SDK/SDK/AIModule_functions.cpp
+    SDK/SDK/CoreUObject_functions.cpp
+    SDK/SDK/GameplayAbilities_functions.cpp
+    SDK/SDK/split/Engine_functions_part000.cpp
+    SDK/SDK/split/Engine_functions_part001.cpp
+    SDK/SDK/split/Engine_functions_part002.cpp
+    SDK/SDK/split/Engine_functions_part003.cpp
+    SDK/SDK/split/Engine_functions_part004.cpp
+    SDK/SDK/split/Engine_functions_part005.cpp
+    SDK/SDK/split/FortniteGame_functions_part000.cpp
+    SDK/SDK/split/FortniteGame_functions_part001.cpp
+    SDK/SDK/split/FortniteGame_functions_part002.cpp
+    SDK/SDK/split/FortniteGame_functions_part003.cpp
+    SDK/SDK/split/FortniteGame_functions_part004.cpp
+    SDK/SDK/split/FortniteGame_functions_part005.cpp
+    SDK/SDK/split/FortniteGame_functions_part006.cpp
+    SDK/SDK/split/FortniteGame_functions_part007.cpp
+    SDK/SDK/split/FortniteGame_functions_part008.cpp
+    SDK/SDK/split/FortniteGame_functions_part009.cpp
+    SDK/SDK/split/FortniteGame_functions_part010.cpp
+    SDK/SDK/split/FortniteGame_functions_part011.cpp
+    SDK/SDK/split/FortniteGame_functions_part012.cpp
+    SDK/SDK/split/FortniteGame_functions_part013.cpp
+    SDK/SDK/UMG_functions.cpp
 )
 
 target_include_directories(OGS-12.41 PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/SDK
+    ${CMAKE_SOURCE_DIR}/SDK/SDK   # split TUs include "Basic.hpp" like the originals
     ${CMAKE_SOURCE_DIR}/platform/erbium
     ${CMAKE_SOURCE_DIR}/platform/src
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/ImGui
 )
 
 target_compile_definitions(OGS-12.41 PRIVATE
