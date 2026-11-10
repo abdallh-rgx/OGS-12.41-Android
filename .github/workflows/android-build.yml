@@ -62,6 +62,15 @@ jobs:
           ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-debug build/libOGS-12.41.so
           ls -la build/libOGS-12.41.so
           ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm build/libOGS-12.41.so | grep -E "JNI_OnLoad|OGS_RT_IsBL" || true
+          # the sinum merge: Dobby must be statically linked (hook engine)
+          if ! ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm build/libOGS-12.41.so | grep -q "DobbyHook"; then
+            echo "ERROR: DobbyHook not linked — libdobby-arm64.a missing from the link"; exit 1
+          fi
+
+      - name: Z3 regression verification (hook engine bug class)
+        run: |
+          python3 -m pip install --quiet claripy
+          python3 tools/verify_hooks_angr.py --regression-only
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
