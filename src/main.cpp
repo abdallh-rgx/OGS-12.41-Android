@@ -6,7 +6,9 @@
 //
 // Flow (dllmain.cpp port, LISTEN-SERVER semantics):
 //   1. wait for libUE4.so + the engine singleton
-//   2. wait for login (Frontend world, match state InProgress)
+//   2. sinum merge: install the curl_easy_setopt redirect (Epic traffic →
+//      the private server) — the earliest deadlock-free point; libsinum.so
+//      must NOT be in the APK anymore (single library does everything now)
 //   3. resolve internals (NativeResolver) + install hooks (all modules)
 //   4. GIsClient = false / GIsServer = true   (the flip)
 //   5. LISTEN SERVER: keep the LocalPlayer alive (UE NM_ListenServer — the
@@ -36,6 +38,7 @@
 #include "GuiTouchInput.h"
 #include "GuiMenu.h"
 #include "ListenServer.h"
+#include "Sinum.h"
 
 #include <chrono>
 #include <fstream>
@@ -54,45 +57,45 @@ uint64_t ImageBase = 0;
 namespace
 {
 constexpr const char* kLogPath =
-	"/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/OGS-12.41.log";
+        "/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/OGS-12.41.log";
 
 std::string Timestamp()
 {
-	using namespace std::chrono;
-	const auto Now = system_clock::now();
-	const time_t Tt = system_clock::to_time_t(Now);
-	tm Tm{};
-	localtime_r(&Tt, &Tm);
-	char Buf[32];
-	strftime(Buf, sizeof(Buf), "%H:%M:%S", &Tm);
-	return Buf;
+        using namespace std::chrono;
+        const auto Now = system_clock::now();
+        const time_t Tt = system_clock::to_time_t(Now);
+        tm Tm{};
+        localtime_r(&Tt, &Tm);
+        char Buf[32];
+        strftime(Buf, sizeof(Buf), "%H:%M:%S", &Tm);
+        return Buf;
 }
 }
 
 void Log(const std::string& msg)
 {
-	static bool FirstCall = true;
+        static bool FirstCall = true;
 
-	if (FirstCall)
-	{
-		mkdir("/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files", 0770);
-		std::ofstream LogFile(kLogPath, std::ios::trunc);
-		if (LogFile.is_open())
-		{
-			LogFile << "[OGS 12.41 Android]: Log file initialized!\n";
-			LogFile.close();
-		}
-		FirstCall = false;
-	}
+        if (FirstCall)
+        {
+                mkdir("/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files", 0770);
+                std::ofstream LogFile(kLogPath, std::ios::trunc);
+                if (LogFile.is_open())
+                {
+                        LogFile << "[OGS 12.41 Android]: Log file initialized!\n";
+                        LogFile.close();
+                }
+                FirstCall = false;
+        }
 
-	std::ofstream LogFile(kLogPath, std::ios::app);
-	if (LogFile.is_open())
-	{
-		LogFile << "[" << Timestamp() << "][OGS]: " << msg << std::endl;
-		LogFile.close();
-	}
+        std::ofstream LogFile(kLogPath, std::ios::app);
+        if (LogFile.is_open())
+        {
+                LogFile << "[" << Timestamp() << "][OGS]: " << msg << std::endl;
+                LogFile.close();
+        }
 
-	LOGI("%s", msg.c_str());
+        LOGI("%s", msg.c_str());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -100,8 +103,8 @@ void Log(const std::string& msg)
 // ═══════════════════════════════════════════════════════════════════════════
 static void InitConsole()
 {
-	Log("Welcome to OGS-12.41 Android, 1:1 port of MOGS by ObsessedTech (Android bring-up)");
-	Log("UE 4.25 (12.41.0-12910313-Android) — libUE4.so base resolves on first use");
+        Log("Welcome to OGS-12.41 Android, 1:1 port of MOGS by ObsessedTech (Android bring-up)");
+        Log("UE 4.25 (12.41.0-12910313-Android) — libUE4.so base resolves on first use");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -112,69 +115,69 @@ static void InitConsole()
 // ═══════════════════════════════════════════════════════════════════════════
 static void LoadWorld()
 {
-	Log("Loading World! (Listen Server — host stays in the match)");
+        Log("Loading World! (Listen Server — host stays in the match)");
 
-	if (!Globals::bCreativeEnabled && !Globals::bSTWEnabled)
-	{
-		UKismetSystemLibrary::ExecuteConsoleCommand(UWorld::GetWorld(), u"open Apollo_Terrain", nullptr);
-	}
-	else if (Globals::bCreativeEnabled)
-	{
-		UKismetSystemLibrary::ExecuteConsoleCommand(UWorld::GetWorld(), u"open Creative_NoApollo_Terrain", nullptr);
-	}
-	// LISTEN SERVER: the PC line 'LocalPlayers.Remove(0)' is intentionally NOT
-	// ported — the host must keep its LocalPlayer to play at the same time
-	// (UE NM_ListenServer). ListenServer::Setup() opens the NetDriver instead.
+        if (!Globals::bCreativeEnabled && !Globals::bSTWEnabled)
+        {
+                UKismetSystemLibrary::ExecuteConsoleCommand(UWorld::GetWorld(), u"open Apollo_Terrain", nullptr);
+        }
+        else if (Globals::bCreativeEnabled)
+        {
+                UKismetSystemLibrary::ExecuteConsoleCommand(UWorld::GetWorld(), u"open Creative_NoApollo_Terrain", nullptr);
+        }
+        // LISTEN SERVER: the PC line 'LocalPlayers.Remove(0)' is intentionally NOT
+        // ported — the host must keep its LocalPlayer to play at the same time
+        // (UE NM_ListenServer). ListenServer::Setup() opens the NetDriver instead.
 }
 
 // install every module hook (dllmain.cpp Hook() port)
 static void Hook()
 {
-	GameMode::Hook();
-	PC::Hook();
-	Abilities::Hook();
-	Inventory::Hook();
-	Building::Hook();
-	Looting::Hook();
-	Quests::Hook();
+        GameMode::Hook();
+        PC::Hook();
+        Abilities::Hook();
+        Inventory::Hook();
+        Building::Hook();
+        Looting::Hook();
+        Quests::Hook();
 
-	Misc::Hook();
-	Net::Hook();
-	Tick::Hook();
+        Misc::Hook();
+        Net::Hook();
+        Tick::Hook();
 
-	Bots::Hook();
-	Creative::Hook();
+        Bots::Hook();
+        Creative::Hook();
 
-	PE::Hook();
+        PE::Hook();
 }
 
 // wait for the login/lobby (dllmain.cpp WaitForLogin port)
 static void WaitForLogin()
 {
-	Log("Waiting for login!");
+        Log("Waiting for login!");
 
-	FName Frontend = UKismetStringLibrary::Conv_StringToName(u"Frontend");
-	FName MatchState = UKismetStringLibrary::Conv_StringToName(u"InProgress");
+        FName Frontend = UKismetStringLibrary::Conv_StringToName(u"Frontend");
+        FName MatchState = UKismetStringLibrary::Conv_StringToName(u"InProgress");
 
-	while (true)
-	{
-		UWorld* CurrentWorld = ((UWorld*)UWorld::GetWorld());
-		if (CurrentWorld)
-		{
-			if (CurrentWorld->Name == Frontend)
-			{
-				auto GameMode = (AGameMode*)CurrentWorld->AuthorityGameMode;
-				if (GameMode && GameMode->GetMatchState() == MatchState)
-				{
-					break;
-				}
-			}
-		}
+        while (true)
+        {
+                UWorld* CurrentWorld = ((UWorld*)UWorld::GetWorld());
+                if (CurrentWorld)
+                {
+                        if (CurrentWorld->Name == Frontend)
+                        {
+                                auto GameMode = (AGameMode*)CurrentWorld->AuthorityGameMode;
+                                if (GameMode && GameMode->GetMatchState() == MatchState)
+                                {
+                                        break;
+                                }
+                        }
+                }
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-	}
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000 * 1));
 }
 
 // the client/server globals (PC: ImageBase+0x804B659/0x804B65A) — resolved
@@ -182,8 +185,8 @@ static void WaitForLogin()
 #include "main_GIs.h"
 namespace GIs
 {
-	bool* Client = nullptr;
-	bool* Server = nullptr;
+        bool* Client = nullptr;
+        bool* Server = nullptr;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -191,59 +194,66 @@ namespace GIs
 // ═══════════════════════════════════════════════════════════════════════════
 static void Main()
 {
-	InitConsole();
+        InitConsole();
 
-	while (UEngine::GetEngine() == 0)
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        while (UEngine::GetEngine() == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-	Log("Engine is up — resolving internals…");
-	ImageBase = InSDKUtils::GetImageBase();
-	Log(std::string("libUE4.so base: 0x") + std::to_string(ImageBase));
+        Log("Engine is up — resolving internals…");
+        ImageBase = InSDKUtils::GetImageBase();
+        Log(std::string("libUE4.so base: 0x") + std::to_string(ImageBase));
 
-	NativeResolver::Init();
+        // sinum merge: redirect Epic traffic BEFORE anything else — the game
+        // starts its first HTTP calls (lightswitch/MCP/manifest) right after
+        // engine init. libUE4.so is fully loaded by now, so dlopen(RTLD_NOLOAD)
+        // inside Sinum::Hook() cannot race the app's own loading (the libsinum
+        // deadlock — see src/Sinum.cpp).
+        Sinum::Hook();
 
-	// GIs flags (Erbium chains)
-	GIs::Client = (bool*)FindGIsClient();
-	GIs::Server = (bool*)FindGIsServer();
-	Log(std::string("GIsClient @ 0x") + std::to_string((uintptr_t)GIs::Client) +
-		", GIsServer @ 0x" + std::to_string((uintptr_t)GIs::Server));
+        NativeResolver::Init();
 
-	WaitForLogin();
+        // GIs flags (Erbium chains)
+        GIs::Client = (bool*)FindGIsClient();
+        GIs::Server = (bool*)FindGIsServer();
+        Log(std::string("GIsClient @ 0x") + std::to_string((uintptr_t)GIs::Client) +
+                ", GIsServer @ 0x" + std::to_string((uintptr_t)GIs::Server));
 
-	Hook();
+        WaitForLogin();
 
-	// the flip (PC: *(bool*)(ImageBase + 0x804B659/0x804B65A))
-	if (GIs::Client && GIs::Server)
-	{
-		*GIs::Client = false; // GIsClient
-		*GIs::Server = true;  // GIsServer
-		Log("Flipped GIsClient=false / GIsServer=true");
-	}
-	else
-	{
-		Log("WARNING: GIs globals unresolved — server flip skipped");
-	}
+        Hook();
 
-	while (UWorld::GetWorld() == nullptr)
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        // the flip (PC: *(bool*)(ImageBase + 0x804B659/0x804B65A))
+        if (GIs::Client && GIs::Server)
+        {
+                *GIs::Client = false; // GIsClient
+                *GIs::Server = true;  // GIsServer
+                Log("Flipped GIsClient=false / GIsServer=true");
+        }
+        else
+        {
+                Log("WARNING: GIs globals unresolved — server flip skipped");
+        }
 
-	while (UWorld::GetWorld()->OwningGameInstance->LocalPlayers.Num() == 0)
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        while (UWorld::GetWorld() == nullptr)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        while (UWorld::GetWorld()->OwningGameInstance->LocalPlayers.Num() == 0)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-	// LISTEN SERVER bring-up (before the map opens so joiners see it in time)
-	ListenServer::Setup();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-	// 4-finger / 2-second touch gesture → GUI (mode select / join by IP)
-	Gui::InitTouchDetection();
-	Gui::InitRenderer();
+        // LISTEN SERVER bring-up (before the map opens so joiners see it in time)
+        ListenServer::Setup();
 
-	LoadWorld();
+        // 4-finger / 2-second touch gesture → GUI (mode select / join by IP)
+        Gui::InitTouchDetection();
+        Gui::InitRenderer();
 
-	ListenServer::OnWorldLoaded();
+        LoadWorld();
 
-	Log("Main: bring-up complete — enjoy! (4 fingers, 2 seconds → menu)");
+        ListenServer::OnWorldLoaded();
+
+        Log("Main: bring-up complete — enjoy! (4 fingers, 2 seconds → menu)");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -251,22 +261,22 @@ static void Main()
 // ═══════════════════════════════════════════════════════════════════════════
 static void StartMainOnce(const char* Via)
 {
-	static std::once_flag Once;
-	std::call_once(Once, [Via]()
-	{
-		LOGI("OGS-12.41 Android: entry via %s — starting worker thread", Via);
-		std::thread(Main).detach();
-	});
+        static std::once_flag Once;
+        std::call_once(Once, [Via]()
+        {
+                LOGI("OGS-12.41 Android: entry via %s — starting worker thread", Via);
+                std::thread(Main).detach();
+        });
 }
 
 extern "C" __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* Vm, void*)
 {
-	StartMainOnce("JNI_OnLoad");
-	return JNI_VERSION_1_6;
+        StartMainOnce("JNI_OnLoad");
+        return JNI_VERSION_1_6;
 }
 
 // constructor fallback (loads even without JNI registration)
 __attribute__((constructor)) static void OgsConstructor()
 {
-	StartMainOnce("constructor");
+        StartMainOnce("constructor");
 }
