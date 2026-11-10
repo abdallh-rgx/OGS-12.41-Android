@@ -42,34 +42,37 @@ struct FRule
 	uint64_t Resolved;
 };
 
-// ─── UE 4.25 anchor strings (module-internal functions) ────────────────────
-// (the exact wording comes from the UE 4.25 source of each function)
+// ─── UE 4.25 anchor strings (verified against the EpicGames/UnrealEngine
+//     4.25.0-release sources; Fortnite-internal ones are best-effort) ──────
 static const wchar_t* kInitHostStrs[] = {
-	L"Failed to InitializeHost",
-	L"GameSession initbannedplayers %s",
+	// PC OGS declares InitHost but never calls it — optional.
+	L"Match has started - begin automatic stat capture",
 };
 static const wchar_t* kPauseBeaconStrs[] = {
-	L"PauseBeaconRequests",
+	// PC OGS declares PauseBeaconRequests but never calls it — optional.
 	L"Pausing beacon requests",
 };
 static const wchar_t* kAddToAliveStrs[] = {
+	// Fortnite-internal (no public source) — best-effort anchors.
 	L"AddToAlivePlayers",
-	L"Num Alive Players",
+	L"NumAlivePlayers",
 };
 static const wchar_t* kBotManagerSetupStrs[] = {
 	L"BotManager",
 	L"Creating Bot",
 };
 static const wchar_t* kRegisterComponentStrs[] = {
-	L"RegisterComponentWithWorld",
-	L"RegisterComponent",
+	// VERIFIED: UActorComponent::RegisterComponentWithWorld (ActorComponent.cpp)
+	L"RegisterComponentWithWorld: (%s) Trying to register component with IsPendingKill() == true. Aborting.",
 };
 static const wchar_t* kDispatchRequestStrs[] = {
 	L"DispatchRequest",
 	L"Dispatching request",
 };
-static const wchar_t* kStepCompiledInStrs[] = {
-	L"StepCompiledIn",
+static const wchar_t* kListenCheckStrs[] = {
+	// VERIFIED: UIpNetDriver::InitListen (IpNetDriver.cpp) — fallback sanity
+	// anchor for the listen path (primary: the Erbium InitListen finder).
+	L"%s IpNetDriver listening on port %i",
 };
 static const wchar_t* kCanCreateContextStrs[] = {
 	L"CanCreateContext",
@@ -142,8 +145,10 @@ FRule g_Rules[] = {
 	{ 0x0163C300, "OnPerceptionSensed",   FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
 	{ 0x049932C0, "OnActorBump",          FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
 	{ 0x01637F50, "SetUpInventoryBot",    FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
-	{ 0x02E1DD00, "StepCompiledIn",       FRule::EKind::String, 0, nullptr, kStepCompiledInStrs, 1, 0 },
-	{ 0x02E1DD30, "StepCompiledInExplicit", FRule::EKind::String, 0, nullptr, kStepCompiledInStrs, 1, 0 },
+	// FFrame step helpers are pure code (no log strings): resolve via the
+	// native-thunk chain; optional — only Inventory's Stack.StepCompiledIn uses them.
+	{ 0x02E1DD00, "StepCompiledIn",       FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
+	{ 0x02E1DD30, "StepCompiledInExplicit", FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
 	{ 0x02E1C4B0, "StaticFindObject",     FRule::EKind::VtNeighbor, 0, nullptr, nullptr, 0, 0 },
 	// PC.h internals
 	{ 0x029B5C80, "ClientOnPawnDied",     FRule::EKind::Finder, 0, []() -> uint64_t { return FindCallPreReplication() ? 0 : 0; }, nullptr, 0, 0 },
