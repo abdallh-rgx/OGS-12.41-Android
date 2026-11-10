@@ -53,11 +53,15 @@ jobs:
         # needs roughly 2 GB of RAM; 4 parallel jobs OOM-kill the 7 GB runner.
         run: cmake --build build -j 2
 
-      - name: Verify library
+      - name: Verify + strip library
         run: |
           ls -la build/libOGS-12.41.so
           file build/libOGS-12.41.so
           ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -h build/libOGS-12.41.so | head -14
+          # strip debug info for the release artifact (JNI_OnLoad stays exported)
+          ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-debug build/libOGS-12.41.so
+          ls -la build/libOGS-12.41.so
+          ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm build/libOGS-12.41.so | grep -E "JNI_OnLoad|OGS_RT_IsBL" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
