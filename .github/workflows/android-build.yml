@@ -1,0 +1,67 @@
+name: Build Android ARM64
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install NDK r27c
+        run: |
+          ANDROID_ROOT=${ANDROID_HOME:-/usr/local/lib/android/sdk}
+          SDKMANAGER=$ANDROID_ROOT/cmdline-tools/latest/bin/sdkmanager
+          if [ -x "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            yes | "$SDKMANAGER" "ndk;27.1.12297006" > /dev/null 2>&1 || true
+            NDK_DIR=$(ls -d $ANDROID_ROOT/ndk/* | sort -V | tail -1)
+          else
+            curl -fsSL -o /tmp/ndk.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+            unzip -q /tmp/ndk.zip -d /tmp/ndk-extract
+            NDK_DIR=/tmp/ndk-extract/android-ndk-r27c
+          fi
+          echo "ANDROID_NDK=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> $GITHUB_ENV
+
+      - name: Install build tools
+        run: |
+          python3 -m pip install --quiet cmake ninja
+          CMAKE_BIN=$(python3 -c "import cmake, os; print(os.path.join(os.path.dirname(cmake.__file__), 'data', 'bin'))")
+          echo "$CMAKE_BIN" >> $GITHUB_PATH
+          NINJA_BIN=$(python3 -c "import ninja, os; print(os.path.join(os.path.dirname(ninja.__file__), 'data', 'bin'))")
+          echo "$NINJA_BIN" >> $GITHUB_PATH
+          cmake --version
+          ninja --version
+
+      - name: Configure
+        run: |
+          mkdir -p build
+          cmake -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        # -j 2: each clang invocation compiling the ~130 MB Dumper-7 SDK TU
+        # needs roughly 2 GB of RAM; 4 parallel jobs OOM-kill the 7 GB runner.
+        run: cmake --build build -j 2
+
+      - name: Verify library
+        run: |
+          ls -la build/libOGS-12.41.so
+          file build/libOGS-12.41.so
+          ${ANDROID_NDK}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -h build/libOGS-12.41.so | head -14
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libOGS-12.41-arm64
+          path: build/libOGS-12.41.so
+          if-no-files-found: error
