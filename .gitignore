@@ -1,2 +1,23 @@
-skills/
-node_modules/
+# Secrets & env
+.env
+*.token
+GH_TOKEN
+
+# Local build artifacts
+build/
+*.o
+*.so
+*.a.tmp
+
+# Big downloaded archives (not part of the source)
+upstream/*.zip
+upstream/*.7z
+upstream/*.rar
+upstream/pc-sdk/
+tool-results/
+tmp/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store

@@ -1,0 +1,378 @@
+=== Dumper Info ===
+Dumper Name: MobileDumper-7
+Dumper Version: 1.0.0
+Dumper Repo: https://github.com/MJx0/MobileDumper-7
+==================
+=== Profile Info ===
+Game: com.epicgames.fortnite1241
+Version: 12.41.0-12910313-Android
+Output: /storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/SDK
+==================
+Initializing Unreal Module...
+=== Unreal Module ===
+Path: /data/app/~~pdKxEWqwYA7fBsDpPSStsg==/com.epicgames.fortnite1241-HybpOHfjNaVIF539iIuE1w==/lib/arm64/libUE4.so
+Start: 0x6C2E043000
+End: 0x6C3E4D9000
+Base: 0x6C2E043000
+Segments (6):
+[00]: 0x0000006c2e043000 - 0x0000006c38db4000 | 0x00000000 | R-X | [/data/app/~~pdKxEWqwYA7fBsDpPSStsg==/com.epicgames.fortnite1241-HybpOHfjNaVIF539iIuE1w==/lib/arm64/libUE4.so]
+[01]: 0x0000006c38db4000 - 0x0000006c38db5000 | 0x0ad71000 | R-X | [/data/app/~~pdKxEWqwYA7fBsDpPSStsg==/com.epicgames.fortnite1241-HybpOHfjNaVIF539iIuE1w==/lib/arm64/libUE4.so]
+[02]: 0x0000006c38db5000 - 0x0000006c3bd5b000 | 0x0ad72000 | R-X | [/data/app/~~pdKxEWqwYA7fBsDpPSStsg==/com.epicgames.fortnite1241-HybpOHfjNaVIF539iIuE1w==/lib/arm64/libUE4.so]
+[03]: 0x0000006c3bd5b000 - 0x0000006c3bd6b000 | 0x00000000 | ---
+[04]: 0x0000006c3bd6b000 - 0x0000006c3e02c000 | 0x0dd18000 | RW- | [/data/app/~~pdKxEWqwYA7fBsDpPSStsg==/com.epicgames.fortnite1241-HybpOHfjNaVIF539iIuE1w==/lib/arm64/libUE4.so]
+[05]: 0x0000006c3e02c000 - 0x0000006c3e4d9000 | 0x00000000 | RW- | [[anon:.bss]]
+==================
+Initializing UEAnalyzerKitty...
+=== UEAnalyzerKitty ===
+InitUEAnalyzerKitty: entry, GMemory=ok GArchDecoder=ok
+InitUEAnalyzerKitty: starting Analyze...
+InitUEAnalyzerKitty: Analyze returned, IsValid=true
+Game build is likely using UTF16 FName strings.
+==================
+Initializing Objects...
+=== Objects ===
+InitObjects: IProfile::GetGObjects() returned valid address (0x6C3E28C200)
+InitObjects: Testing GObjects candidate 0x6C3E28C200 (User Profile confidence 100.0%)...
+ResolveGObjectsLayout: GObjects Layout resolved by detection (100.0% confidence).
+InitObjects: [Direct] Resolve succeeded, layout is Chunked
+TestObjectsLayout: Verifying the chunked object array layout at 0x6C3E28C200 (355920 objects in chunks of 65536)
+TestObjectsLayout: 50 of 50 sampled slots held a valid object.
+InitObjects: [Direct] Validation passed (50/50 samples, 100.0%)
+InitObjects: GObjects accepted at 0x6C3E28C200 (Direct)
+GObjects pointer: 0x6C3E28C200
+GObjects offset: 0x10249200
+GObjects layout type: FChunkedFixedUObjectArray
+FChunkedFixedUObjectArray::Objects: 0x10 -> 0x63AE0A6380
+FChunkedFixedUObjectArray::MaxElements: 0x20 -> 0xD0000 (Optional)
+FChunkedFixedUObjectArray::NumElements: 0x24 -> 0x56E50
+FChunkedFixedUObjectArray::MaxChunks: 0x28 -> 0xD (Optional)
+FChunkedFixedUObjectArray::NumChunks: 0x2C -> 0x6 (Optional)
+FChunkedFixedUObjectArray::ElementsPerChunk: 0x10000
+FUObjectItem::Object: 0x0
+FUObjectItem::Size: 0x18
+==================
+Initializing Names...
+=== Names ===
+InitNames: IProfile::GetGNames() returned valid address (0x6C3E1F8EC0)
+InitNames: Testing GNames candidate 0x6C3E1F8EC0 (User Profile confidence 100.0%)...
+GetBlocksBit: FNamePool BlocksBit (16) resolved by object FName voting (17 votes).
+ResolveGNamesLayout: GNames Layout resolved by detection (100.0% confidence).
+InitNames: [Direct] Resolve succeeded, layout is Pool
+TestNamesLayout: Verifying the name pool layout at 0x6C3E1F8EC0.
+TestNamesLayout: Entry 0 reads "None"; decoded 50 of 50 sampled names, 17 matched known engine names.
+InitNames: [Direct] Validation passed (50/50 entries, 100.0%)
+InitNames: GNames accepted at 0x6C3E1F8EC0 (Direct)
+GNames pointer: 0x6C3E1F8EC0
+GNames offset: 0x101B5EC0
+GNames layout type: FNamePool
+FNamePool::BlocksBit: 0x10
+FNamePool::MaxChunkIndex: 0x38 -> 0xC6 (Optional)
+FNamePool::ByteCursor: 0x3C -> 0x1C874 (Optional)
+FNamePool::Blocks: 0x40 -> 0x7098C81000
+FNameEntry::Stride: 0x2
+FNameEntry::Header: 0x0
+FNameEntry::String: 0x2
+InitNames: Testing IProfile::GetNameEntryByIndex and GetNameEntryString...
+InitNames: Printing the first 10 name entries...
+[00] None
+[03] ByteProperty
+[10] IntProperty
+==================
+Initializing Settings...
+=== Settings ===
+General::MaxFNameLen: 255
+Generator::ZipCompressionLevel: 6
+EngineCore::bEnableEncryptedObjectPropertySupport: false
+CppGenerator::UseMemberCustomSpacing: false
+CppGenerator::SDKNamespaceName: SDK
+CppGenerator::XORString: (none)
+CppGenerator::bForceNoGWorldInSDK: false
+CppGenerator::bAddManualOverrideOptions: true
+CppGenerator::bAddFinalSpecifier: true
+MappingGenerator::bShouldCheckForDuplicatedNames: true
+MappingGenerator::bExcludeEditorOnlyProperties: true
+Debug::bGenerateAssertionFile: true
+==================
+Initializing Offsets...
+=== Offsets ===
+Finding UObject.Index...
+UObject.Index = 0xC
+Initializing UObject.Flags...
+UObject.Flags = 0x8
+Initializing UObject.Class...
+UObject.Class = 0x10
+Initializing UObject.Outer...
+UObject.Outer = 0x20
+Initializing UObject.Name...
+UObject.Name = 0x18
+(Early) Initializing FName...
+(Early) FName.CompIdx = 0x0
+(Early) FName.Number = 0x4
+(Early) FName.SizeOf = 0x8
+(Early) UClass.CastFlags = 0xE8
+Initializing UStruct.Children...
+UStruct.Children = 0x48
+Initializing UField.Next...
+UField.Next = 0x28
+Initializing UStruct.SuperStruct...
+UStruct.SuperStruct = 0x40
+Initializing UStruct.Size...
+UStruct.Size = 0x58
+Initializing UStruct.MinAlignment...
+UStruct.MinAlignment = 0x5C
+Initializing UClass.CastFlags...
+UClass.CastFlags = 0xE8
+Initializing UStruct.StructBaseChain...
+UStruct.StructBaseChain = 0x30
+Initializing UClass.ClassDefaultObject...
+UClass.ClassDefaultObject = 0x130
+Initializing UClass.ImplementedInterfaces...
+UClass.ImplementedInterfaces = 0x220
+Initializing UEnum.Names...
+UEnum.Names = 0x40
+Initializing UEnum.UnderlyingType...
+Couldn't find "UEnum.UnderlyingType" but it's not required.
+Initializing UFunction.FunctionFlags...
+UFunction.FunctionFlags = 0xC8
+Initializing UFunction.NumParams...
+UFunction.NumParams = 0xCC
+Initializing UFunction.ParamSize...
+UFunction.ParamSize = 0xCE
+Initializing UFunction.ExecFunction...
+UFunction.ExecFunction = 0xF0
+Initializing Property.ElementSize...
+Property.ElementSize = 0x34
+Initializing Property.ArrayDim...
+Property.ArrayDim = 0x30
+Initializing Property.Offset_Internal...
+Property.Offset_Internal = 0x44
+Initializing Property.PropertyFlags...
+Property.PropertyFlags = 0x38
+Initializing BoolProperty.Base...
+BoolProperty.Base = 0x70
+Initializing EnumProperty.Base...
+EnumProperty.Base = 0x70
+Initializing ObjectProperty.PropertyClass...
+ObjectProperty.PropertyClass = 0x70
+Initializing ByteProperty.Enum...
+ByteProperty.Enum = 0x70
+Initializing StructProperty.Struct...
+StructProperty.Struct = 0x70
+Initializing DelegateProperty.SignatureFunction...
+DelegateProperty.SignatureFunction = 0x70
+Initializing ArrayProperty.Inner...
+ArrayProperty.Inner = 0x70
+Initializing SetProperty.ElementProp...
+SetProperty.ElementProp = 0x70
+Initializing MapProperty.Base...
+MapProperty.Base = 0x70
+(Late) Initializing FName...
+(Late) FName.CompIdx = 0x0
+(Late) FName.Number = 0x4
+(Late) FName.SizeOf = 0x8
+OptionalProperty.ValueProperty = 0x70
+ClassProperty.MetaClass = 0x78
+=== FInGenOffsets ===
+FName::CompIdx: 0x0
+FName::Number: 0x4
+FName::SizeOf: 0x8
+UObject::Vft: 0x0
+UObject::Flags: 0x8
+UObject::Index: 0xC
+UObject::Class: 0x10
+UObject::Name: 0x18
+UObject::Outer: 0x20
+UField::Next: 0x28
+UEnum::Names: 0x40
+UStruct::StructBaseChain: 0x30
+UStruct::SuperStruct: 0x40
+UStruct::Children: 0x48
+UStruct::Size: 0x58
+UStruct::MinAlignment: 0x5C
+UFunction::FunctionFlags: 0xC8
+UFunction::NumParams: 0xCC
+UFunction::ParamSize: 0xCE
+UFunction::ExecFunction: 0xF0
+UClass::CastFlags: 0xE8
+UClass::ClassDefaultObject: 0x130
+UClass::ImplementedInterfaces: 0x220
+Property::ArrayDim: 0x30
+Property::ElementSize: 0x34
+Property::PropertyFlags: 0x38
+Property::Offset_Internal: 0x44
+ByteProperty::Enum: 0x70
+BoolProperty::Base: 0x70
+ObjectProperty::PropertyClass: 0x70
+ClassProperty::MetaClass: 0x78
+StructProperty::Struct: 0x70
+ArrayProperty::Inner: 0x70
+DelegateProperty::SignatureFunction: 0x70
+MapProperty::Base: 0x70
+SetProperty::ElementProp: 0x70
+EnumProperty::Base: 0x70
+OptionalProperty::ValueProperty: 0x70
+FInstancedStruct::ScriptStruct: 0x0
+FInstancedStruct::StructMemory: 0x8
+Property::SizeOf: 0x70
+Finding ULevel.Actors...
+ULevel.Actors = 0xFFFFFFFF
+Finding UDataTable.RowMap...
+InitDatatableRowMapOffset: [DataTable] Couldn't find "RowStruct" property, assuming default layout.
+UDataTable.RowMap = 0x30
+Finding GEngine & GWorld Offsets...
+World instance at 0x654e116a80 
+Engine instance at 0x654e068000 
+FindStaticOffsets: Found 0 candidates for 'World'
+FindStaticOffsets: Found 1 candidates for 'Engine'
+FindStaticOffsets: 'Engine' offset = 0x101DB9F8
+[EngineVersion] 'EngineVersion' property not found on UEngine
+GWorld wasn't found, You may get GWorld via GEngine->GameViewport->World
+GEngine Offset: 0x101DB9F8
+GWorld Offset: 0x0
+Finding ProcessEvent...
+InitProcessEvent: VTable index 67 scored 7 (Objs=true Idx=true Item=false Flags1=true Size=true Parms1=true Parms2=true Children1=false Flags2=true Children2=false)
+ProcessEvent Index: 67
+ProcessEvent Offset: 0x79ECBFC
+Finding FText Offsets...
+InitFText: FText size could not be determined!
+FText.Size: 0x-1
+FText.TextData: 0x-1
+FText.InTextDataString: 0x-1
+InternalSettings::bUseChar16String: true
+Finding size of DelegateProperty...
+DelegateProperty.SizeOf = 0xFFFFFFFF
+Finding size of MulticastInlineDelegateProperty...
+MulticastInlineDelegateProperty.SizeOf = 0xFFFFFFFF
+=== FInSKOffsets ===
+GEngine: 0xDFDA008
+GWorld: 0x10191070
+GObjects: 0x10249200
+GNames: 0x101B5EC0
+PEIndex: 67
+PEOffset: 0x79ECBFC
+FText::TextData: 0xFFFFFFFF
+FText::Size: 0xFFFFFFFF
+FText::InTextDataString: 0xFFFFFFFF
+ULevel::Actors: 0xFFFFFFFF
+UDataTable::RowMap: 0x30
+DelegateProperty::SizeOf: 0xFFFFFFFF
+MulticastInlineDelegateProperty::SizeOf: 0xFFFFFFFF
+Printing first 10 objects...
+[00] CoreUObject
+[01] Object
+[02] FortniteGame
+[03] FortCameraMode
+[04] FortCameraMode_ThirdPerson
+[05] FortCameraMode_AthenaVehicle
+[06] HoagieRuntime
+[07] FortCameraMode_Hoagie
+[08] Engine
+[09] Actor
+==================
+Initializing Internal Settings...
+=== Internal Settings ===
+InitWeakObjectPtrSettings: 'Asset' wasn't found, could not determine value for 'bIsWeakObjectPtrWithoutTag'!
+Something went horribly wrong, FVector::X wasn't even found!
+GameName: com.epicgames.fortnite1241
+GameVersion: 12.41.0-12910313-Android
+bIsEnumNameOnly: false
+bIsSmallEnumValue: false
+bHasUnderlayingTypeInUEnum: false
+bIsNewUE5EnumNamesContainer: false
+bIsWeakObjectPtrWithoutTag: false
+bUseFProperty: false
+bUseNamePool: true
+bIsObjectNameBeforeClass: false
+bUseCasePreservingName: false
+bUseOutlineNumberName: false
+bIsObjPtrInsteadOfFieldPathProperty: false
+bUseMaskForFieldOwner: false
+bUseLargeWorldCoordinates: false
+bUseUint8ArrayDim: false
+bUseChar16String: true
+==================
+Initializing Managers...
+=== Managers ===
+(Early) Initializing PackageManager...
+Initializing StructManager...
+Initializing EnumManager...
+Initializing MemberManager...
+(Late) Initializing PackageManager...
+Managers Initialized.
+==================
+=== Generating Dumps ===
+Generating GObjects Dump...
+Generated in 16.73 sec
+Generating NameIndices.h...
+GNIH: 1-start
+GNIH: 2-scanning 359083 objects
+GNIH: obj 50000/359083
+GNIH: obj 100000/359083
+GNIH: obj 150000/359083
+GNIH: obj 200000/359083
+GNIH: obj 250000/359083
+GNIH: obj 300000/359083
+GNIH: obj 350000/359083
+GNIH: 3-objects done, 103213 unique
+GNIH: 4-pool scan SKIPPED (12.41 crash guard)
+GNIH: 5-sorting by name
+GNIH: 6-opening output
+GNIH: 7-writing kTable
+GNIH: 8-writing kIndexToName
+GNIH: 9-done, 103213 names
+Generated in 4.00 sec
+Generating GObjects With Props Dump...
+Generated in 17.90 sec
+Generating C++ SDK Dump...
+Generated in 18.63 sec
+Generating Mappings Dump...
+Generated in 1.52 sec
+Generating IDA Mappings Dump...
+StructManager::GetInfo: struct not in map [ Index=336271, Name='AnimBlueprintGeneratedClass F_MED_Desert_Ops_Camo_Pixie_AnimBP.F_MED_Desert_Ops_Camo_Pixie_AnimBP_C' ]
+StructManager::GetInfo: struct not in map [ Index=336271, Name='AnimBlueprintGeneratedClass F_MED_Desert_Ops_Camo_Pixie_AnimBP.F_MED_Desert_Ops_Camo_Pixie_AnimBP_C' ]
+StructManager::GetInfo: struct not in map [ Index=336271, Name='AnimBlueprintGeneratedClass F_MED_Desert_Ops_Camo_Pixie_AnimBP.F_MED_Desert_Ops_Camo_Pixie_AnimBP_C' ]
+StructManager::GetInfo: struct not in map [ Index=356795, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMonitor.FloatingInteraction_Indicator_DonutMonitor_C' ]
+StructManager::GetInfo: struct not in map [ Index=356795, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMonitor.FloatingInteraction_Indicator_DonutMonitor_C' ]
+StructManager::GetInfo: struct not in map [ Index=356795, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMonitor.FloatingInteraction_Indicator_DonutMonitor_C' ]
+StructManager::GetInfo: struct not in map [ Index=356830, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMilkCarton.FloatingInteraction_Indicator_DonutMilkCarton_C' ]
+StructManager::GetInfo: struct not in map [ Index=356830, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMilkCarton.FloatingInteraction_Indicator_DonutMilkCarton_C' ]
+StructManager::GetInfo: struct not in map [ Index=356830, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutMilkCarton.FloatingInteraction_Indicator_DonutMilkCarton_C' ]
+StructManager::GetInfo: struct not in map [ Index=356868, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutLetter.FloatingInteraction_Indicator_DonutLetter_C' ]
+StructManager::GetInfo: struct not in map [ Index=356868, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutLetter.FloatingInteraction_Indicator_DonutLetter_C' ]
+StructManager::GetInfo: struct not in map [ Index=356868, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutLetter.FloatingInteraction_Indicator_DonutLetter_C' ]
+StructManager::GetInfo: struct not in map [ Index=356906, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutCalendar.FloatingInteraction_Indicator_DonutCalendar_C' ]
+StructManager::GetInfo: struct not in map [ Index=356906, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutCalendar.FloatingInteraction_Indicator_DonutCalendar_C' ]
+StructManager::GetInfo: struct not in map [ Index=356906, Name='WidgetBlueprintGeneratedClass FloatingInteraction_Indicator_DonutCalendar.FloatingInteraction_Indicator_DonutCalendar_C' ]
+StructManager::GetInfo: struct not in map [ Index=356944, Name='BlueprintGeneratedClass Donut_Destruction.Donut_Destruction_C' ]
+StructManager::GetInfo: struct not in map [ Index=356944, Name='BlueprintGeneratedClass Donut_Destruction.Donut_Destruction_C' ]
+StructManager::GetInfo: struct not in map [ Index=356944, Name='BlueprintGeneratedClass Donut_Destruction.Donut_Destruction_C' ]
+StructManager::GetInfo: struct not in map [ Index=357004, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_8.BP_Spybase_Donut_Week_8_C' ]
+StructManager::GetInfo: struct not in map [ Index=357004, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_8.BP_Spybase_Donut_Week_8_C' ]
+StructManager::GetInfo: struct not in map [ Index=357004, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_8.BP_Spybase_Donut_Week_8_C' ]
+StructManager::GetInfo: struct not in map [ Index=357012, Name='BlueprintGeneratedClass BP_Spybase_Bathroom.BP_Spybase_Bathroom_C' ]
+StructManager::GetInfo: struct not in map [ Index=357012, Name='BlueprintGeneratedClass BP_Spybase_Bathroom.BP_Spybase_Bathroom_C' ]
+StructManager::GetInfo: struct not in map [ Index=357012, Name='BlueprintGeneratedClass BP_Spybase_Bathroom.BP_Spybase_Bathroom_C' ]
+StructManager::GetInfo: struct not in map [ Index=357028, Name='BlueprintGeneratedClass BP_NoTickHaze.BP_NoTickHaze_C' ]
+StructManager::GetInfo: struct not in map [ Index=357028, Name='BlueprintGeneratedClass BP_NoTickHaze.BP_NoTickHaze_C' ]
+StructManager::GetInfo: struct not in map [ Index=357028, Name='BlueprintGeneratedClass BP_NoTickHaze.BP_NoTickHaze_C' ]
+StructManager::GetInfo: struct not in map [ Index=357033, Name='BlueprintGeneratedClass BP_DonutWater.BP_DonutWater_C' ]
+StructManager::GetInfo: struct not in map [ Index=357033, Name='BlueprintGeneratedClass BP_DonutWater.BP_DonutWater_C' ]
+StructManager::GetInfo: struct not in map [ Index=357033, Name='BlueprintGeneratedClass BP_DonutWater.BP_DonutWater_C' ]
+StructManager::GetInfo: struct not in map [ Index=357059, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_7.BP_Spybase_Donut_Week_7_C' ]
+StructManager::GetInfo: struct not in map [ Index=357059, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_7.BP_Spybase_Donut_Week_7_C' ]
+StructManager::GetInfo: struct not in map [ Index=357059, Name='BlueprintGeneratedClass BP_Spybase_Donut_Week_7.BP_Spybase_Donut_Week_7_C' ]
+StructManager::GetInfo: struct not in map [ Index=357061, Name='BlueprintGeneratedClass Apollo_Donut_Calendar_01.Apollo_Donut_Calendar_01_C' ]
+StructManager::GetInfo: struct not in map [ Index=357061, Name='BlueprintGeneratedClass Apollo_Donut_Calendar_01.Apollo_Donut_Calendar_01_C' ]
+StructManager::GetInfo: struct not in map [ Index=357061, Name='BlueprintGeneratedClass Apollo_Donut_Calendar_01.Apollo_Donut_Calendar_01_C' ]
+StructManager::GetInfo: struct not in map [ Index=357100, Name='BlueprintGeneratedClass Frontend_BP12_Room_D_Scripting.Frontend_BP12_Room_D_Scripting_C' ]
+StructManager::GetInfo: struct not in map [ Index=357100, Name='BlueprintGeneratedClass Frontend_BP12_Room_D_Scripting.Frontend_BP12_Room_D_Scripting_C' ]
+StructManager::GetInfo: struct not in map [ Index=357100, Name='BlueprintGeneratedClass Frontend_BP12_Room_D_Scripting.Frontend_BP12_Room_D_Scripting_C' ]
+StructManager::GetInfo: struct not in map [ Index=359072, Name='WidgetBlueprintGeneratedClass UI_DonutMouseCursor.UI_DonutMouseCursor_C' ]
+StructManager::GetInfo: struct not in map [ Index=359072, Name='WidgetBlueprintGeneratedClass UI_DonutMouseCursor.UI_DonutMouseCursor_C' ]
+StructManager::GetInfo: struct not in map [ Index=359072, Name='WidgetBlueprintGeneratedClass UI_DonutMouseCursor.UI_DonutMouseCursor_C' ]
+Generated in 8.41 sec
+Generating Dumpspace Dump...
+Generated in 1.95 sec
+Dumping completed in 1.90 min
+Dump Folder: /storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/SDK/com.epicgames.fortnite1241_v12.41.0-12910313-Android_20261107-070733
+==================
