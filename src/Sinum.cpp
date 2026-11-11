@@ -46,8 +46,8 @@ namespace Sinum
 // ─── redirect target (sinum's compiled-in values, 1:1) ──────────────────────
 // Change these two lines to repoint the client at a different server.
 constexpr const char* kRedirectProtocol = "http";
-constexpr const char* kRedirectHost = "127.0.0.1:3551";
-constexpr const char* kRedirectPort = ""; // empty = default port
+constexpr const char* kRedirectHost = "127.0.0.1";
+constexpr const char* kRedirectPort = "3551"; // empty = default port
 
 // ─── Uri (Url.h, verbatim port) ────────────────────────────────────────────
 struct Uri
