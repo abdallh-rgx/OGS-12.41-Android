@@ -62,7 +62,7 @@ to the PC SDK mechanics, no per-function offsets needed.
 |---|---|
 | `wchar_t` / `L""` | `char16_t` / `u""` (UE-on-Android 12.41 TCHAR is UTF-16 — confirmed by the on-device dump) |
 | `std::wstring` | `std::u16string` |
-| MinHook `MH_CreateHook` | `OGS_HOOK(pcRva,…)` → `Hooking::InternalHook` (ARM64 inline hooks w/ trampoline + relocation — `platform/erbium/HookingARM64.cpp`) |
+| MinHook `MH_CreateHook` | `OGS_HOOK(pcRva,…)` → `Hooking::InternalHook` → **Dobby** (`third_party/dobby/libdobby-arm64.a` — the exact engine libsinum used crash-free on-device; the v1 custom engine was removed after the R1/R2 regression proofs) |
 | `MH_EnableHook(MH_ALL_HOOKS)` | hooks install enabled |
 | Windows APIs (`Sleep`, `VirtualProtect`, `__int64`, `MultiByteToWideChar`, …) | `platform/erbium/compat/win32_compat.h` |
 | `_ReturnAddress()` | `__builtin_return_address(0)` |
@@ -93,8 +93,11 @@ to the PC SDK mechanics, no per-function offsets needed.
 - `tools/verify_offsets_z3.py` — 34 Z3 proofs (offset algebra vs the on-device dump).
 - `tools/verify_hooks_angr.py` — angr symbolic proofs that the **compiled**
   ARM64 decoders/encoders match the ARM spec for **all** encodings.
+- `tools/verify_hooks_angr.py --regression-only` — Z3 regression proofs R1–R3
+  (the v1 engine post-mortem: ADRP immlo drop, veneer quad misplacement,
+  double-engine corruption).
 
-## Tombstone post-mortem — the sinum init model (merged)
+## Tombstone post-mortem #1 and #2 — the sinum init model (merged)
 
 Two device tombstones against `com.epicgames.fortnite1241` drove the init
 rework; `libsinum.so` (loaded in the same APK) never crashed, and the fix is
@@ -126,17 +129,45 @@ construction only, zero engine/dlopen calls):**
 - The PC attach-time initializers are deferred to
   `Bosses::Init()` / `Tick::Hook()` / the `PC.h` vtable capture — called
   from `Main()` after the engine is up, in the PC order.
-- **sinum coexistence on the same hooks**: `HookingARM64::InternalHook`
-  detects an already-patched target (`[LDR X17,#8][BR X17][.quad prev]` or
-  a far `B` veneer) and **chains** — it swaps only the detour quad and
-  hands the caller the previous detour as the "original" (our detour →
-  sinum's detour → its trampoline → the real function), instead of
-  clobbering sinum's bytes. Proven by angr/Z3 V8
-  (`OGS_Hook_IsExistingDispatch` ⇔ the dispatch-pattern equality, all
-  word pairs).
 - Latent resolver bugs fixed with it: the Tick rule-key shift
   (`TickFlush=0x42C3ED0`, `GetMaxTickRate=0x4576310`,
   `ServerReplicateActors=0x1023F60` — verified against the PC original),
   the SpawnBot key typo (`0x19E9B10`, was `0x018E9B10`), plus documented
   Zero rules for the Misc.h nullFunc site (`0x3CA10C0`) and the SpawnBot
   caller check (`0x1A4153F`).
+
+## The sinum merge (v2 — single library)
+
+The first on-device run (APK carrying `libsinum.so` + `libOGS-12.41.so`) crashed.
+Post-mortem (tombstone + Z3 proofs R1–R3, see README "Root cause"):
+
+1. **v1 engine ADRP relocation bug** — the private decoder in
+   `HookingARM64.cpp` dropped `immlo`; 3/4 of ADRPs relocated to a page
+   `immlo×0x1000` off (proof R1). Trampoline calls dereferenced wild pointers.
+2. **v1 engine veneer bug** — B/BL out-of-range veneers read the words after
+   the BR instead of the end-buffer target quad (proof R2).
+3. **Two hook engines on one libUE4.so** — libsinum's Dobby + our v1 engine
+   re-hooking each other's patches (proof R3: wild jump destinations exist).
+4. **Loader deadlock** — sinum's constructor-thread `dlopen("libUE4.so",
+   RTLD_NOW)` raced the main thread's own loading (the tombstone shows the
+   sinum worker stuck on the linker mutex).
+
+The merge (this version):
+
+- `third_party/dobby/` — the exact `libdobby-arm64.a` libsinum shipped
+  (proven crash-free on-device against this libUE4.so, PAC-aware).
+- `platform/erbium/HookingARM64.cpp` — v2: `InternalHook` delegates to
+  `DobbyHook`; only the in-place patches (RET / MOV W0,#1 / NOP / branch
+  invert / vtable swap) remain native (no relocation → spec encodings).
+- `src/Sinum.{h,cpp}` — sinum's runtime logic ported 1:1
+  (`curl_easy_setopt` redirect: `ol/ak/on.epicgames.com`, `*.akamaized.net`
+  → tunnel host, `CURLOPT_SSL_VERIFYPEER=0`), installed from `Main()` after
+  engine-up via `dlopen(RTLD_NOLOAD)` — never from the constructor, never
+  `RTLD_NOW` (kills the deadlock).
+- Deployment: **the APK ships `libOGS-12.41.so` only** — delete
+  `libsinum.so` and its `System.loadLibrary("sinum")` line.
+
+The v1 "coexistence chaining" (detecting sinum's dispatch patch and swapping
+only the detour quad) was removed with the v1 engine — with the single-library
+deployment there is exactly ONE hook engine (Dobby) and one `InternalHook`
+path, which is what proofs R1–R3 demand.

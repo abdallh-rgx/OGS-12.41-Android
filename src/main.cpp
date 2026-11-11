@@ -6,7 +6,9 @@
 //
 // Flow (dllmain.cpp port, LISTEN-SERVER semantics):
 //   1. wait for libUE4.so + the engine singleton
-//   2. wait for login (Frontend world, match state InProgress)
+//   2. sinum merge: install the curl_easy_setopt redirect (Epic traffic →
+//      the private server) — the earliest deadlock-free point; libsinum.so
+//      must NOT be in the APK anymore (single library does everything now)
 //   3. resolve internals (NativeResolver) + install hooks (all modules)
 //   4. GIsClient = false / GIsServer = true   (the flip)
 //   5. LISTEN SERVER: keep the LocalPlayer alive (UE NM_ListenServer — the
@@ -36,6 +38,7 @@
 #include "GuiTouchInput.h"
 #include "GuiMenu.h"
 #include "ListenServer.h"
+#include "Sinum.h"
 
 #include <chrono>
 #include <fstream>
@@ -265,6 +268,13 @@ static void Main()
         ImageBase = InSDKUtils::GetImageBase();
         Log(std::string("libUE4.so base: 0x") + std::to_string(ImageBase));
 
+        // sinum merge: redirect Epic traffic BEFORE anything else — the game
+        // starts its first HTTP calls (lightswitch/MCP/manifest) right after
+        // engine init. libUE4.so is fully loaded by now, so dlopen(RTLD_NOLOAD)
+        // inside Sinum::Hook() cannot race the app's own loading (the libsinum
+        // deadlock — see src/Sinum.cpp).
+        Sinum::Hook();
+
         NativeResolver::Init();
 
         // GIs flags (Erbium chains)
@@ -343,4 +353,5 @@ extern "C" __attribute__((visibility("default"))) jint JNI_OnLoad(JavaVM* Vm, vo
 // caused the linker deadlock (tombstone #1) and spawning the worker before
 // the remaining TU constructors finished raced the data tables. ART calls
 // JNI_OnLoad only AFTER dlopen returns (linker lock released) — that is the
-// one safe load-time entry, exactly like libsinum.
+// one safe load-time entry, exactly like libsinum. The patched APK loads us
+// with System.loadLibrary("OGS-12.41"), which guarantees JNI_OnLoad.

@@ -3,9 +3,14 @@
 // (tools/verify_hooks_angr.py).
 //
 // These expose the exact ARM64 decode/encode math the runtime uses (the RT
-// engine in platform/erbium/RT.h and the ARM64 encoders of HookingARM64) as
-// plain functions so the built libOGS-12.41.so can be loaded in angr and its
-// COMPILED logic proven equivalent to the ARM specification formulas.
+// engine in platform/erbium/RT.h + the direct-patch encodings that remain in
+// HookingARM64 v2: RET / MOV W0,#1 / NOP) as plain functions so the built
+// libOGS-12.41.so can be loaded in angr and its COMPILED logic proven
+// equivalent to the ARM specification formulas.
+//
+// The LDR X17,#8 ; BR X17 dispatch points below document the dispatch-pair
+// semantics the Z3 regression suite (R2/R3) reasons about — inline-hook
+// dispatch itself is delegated to Dobby since the v2 merge.
 // ============================================================================
 #include "pch.h"
 #include "../platform/erbium/RT.h"
@@ -74,15 +79,5 @@ OGS_EXPORT uint32_t OGS_Hook_EncRet()
 OGS_EXPORT uint64_t OGS_Hook_EncRetTrue()
 {
         return (uint64_t)0x52800020u | ((uint64_t)0xD65F03C0u << 32);
-}
-
-// ─── sinum-coexistence chain detection (HookingARM64 InternalHook Case A) ──
-// True ⇔ the two words at a hook target are already an absolute-dispatch
-// patch [LDR X17,#8][BR X17] (0x58000051, 0xD61F0220) — the pattern we AND
-// libsinum.so both install. On a match InternalHook swaps only the .quad
-// (chaining onto the previous detour) instead of stealing the bytes.
-OGS_EXPORT bool OGS_Hook_IsExistingDispatch(uint32_t w0, uint32_t w1)
-{
-        return w0 == 0x58000051u /* EncLdrX17Abs() */ && w1 == 0xD61F0220u /* EncBrX17() */;
 }
 

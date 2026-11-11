@@ -12,6 +12,7 @@ set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 add_library(OGS-12.41 SHARED
     src/main.cpp
     src/NativeResolver.cpp
+    src/Sinum.cpp
     src/GuiTouchInput.cpp
     src/GuiMenu.cpp
     src/GuiRenderer.cpp
@@ -60,6 +61,7 @@ target_include_directories(OGS-12.41 PRIVATE
     ${CMAKE_SOURCE_DIR}/platform/src
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/src/ImGui
+    ${CMAKE_SOURCE_DIR}/third_party/dobby   # sinum merge: Dobby (inline-hook engine)
 )
 
 target_compile_definitions(OGS-12.41 PRIVATE
@@ -86,6 +88,13 @@ target_link_options(OGS-12.41 PRIVATE
     -landroid    # ANativeActivity / input queue
     -lEGL -lGLESv3  # GUI overlay (eglSwapBuffers hook + OpenGL ES 3)
     -ldl
+)
+
+# sinum merge: the Dobby inline-hook engine — the exact prebuilt libsinum
+# used crash-free on-device against this libUE4.so (PAC-aware ARM64). It
+# replaces the v1 custom engine (broken ADRP/veneer relocation).
+target_link_libraries(OGS-12.41 PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/dobby/libdobby-arm64.a
 )
 
 # hide everything by default; export only the constructor/JNI entry
