@@ -12,6 +12,8 @@
 
 namespace Gui
 {
+    // FourFinger Reveal by smali 2000ms
+    void QueueMenuToggle();
 	// Start the input hook + gesture tracker (idempotent).
 	void InitTouchDetection();
 
