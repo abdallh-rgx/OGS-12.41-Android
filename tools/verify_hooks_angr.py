@@ -210,6 +210,25 @@ def main():
           "(LDR imm19 == 2 -> literal @ pc+8, Rt == X17; BR Rn == X17)",
           imm19 == 2 and ldr_rt == 17 and br_rn == 17)
 
+    # ─── V8: sinum-coexistence chain detection (InternalHook Case A) ───────
+    # IsExistingDispatch(w0,w1) ⇔ (w0 == 0x58000051 ∧ w1 == 0xD61F0220),
+    # proven FOR ALL word pairs: the compiled predicate must be exactly the
+    # dispatch-pattern equality (Z3: negation of the equivalence UNSAT).
+    W2 = claripy.BVS("w1", 32)
+    r = call_fn("OGS_Hook_IsExistingDispatch", [W, W2])
+    if r is not None:
+        spec = claripy.And(W == 0x58000051, W2 == 0xD61F0220)
+        compiled = r == 1  # bool return in x0 (0/1)
+        s = claripy.Solver()
+        s.add(claripy.Not(compiled == spec))
+        if s.satisfiable():
+            check("V8: IsExistingDispatch ⇔ dispatch-pattern equality", False)
+        else:
+            check("V8: IsExistingDispatch ⇔ dispatch-pattern equality "
+                  "(sinum chain detection, all word pairs)", True)
+    else:
+        check("V8: OGS_Hook_IsExistingDispatch callable", False)
+
     print()
     if failures:
         print(f"{FAIL} {failures} verification(s) FAILED")

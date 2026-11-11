@@ -8,7 +8,7 @@ maps to this repository. The PC's `ImageBase + 0x…` hardcoded offsets become
 
 | PC | Android |
 |---|---|
-| `DllMain` → `CreateThread(Main)` | `System.loadLibrary("OGS-12.41")` → `JNI_OnLoad` (and constructor fallback) → worker thread (single-shot guard) |
+| `DllMain` → `CreateThread(Main)` | `System.loadLibrary("OGS-12.41")` → `JNI_OnLoad` **only** → worker thread (single-shot guard). **No `__attribute__((constructor))`** — constructors run under the linker's write lock inside `call_constructors`, before libUE4.so exists in this process (see the tombstone post-mortem below) |
 | `InitConsole` (AllocConsole + `OGS_log.txt`) | `Log()` → logcat (`-s OGS`) + `/storage/emulated/0/Android/data/com.epicgames.fortnite1241/files/OGS-12.41.log` |
 | `WaitForLogin` (Frontend + InProgress) | identical (SDK-resolved, no offsets) |
 | `Hook()` (all modules) | identical, via `OGS_HOOK(pcRva, …)` |
@@ -93,3 +93,50 @@ to the PC SDK mechanics, no per-function offsets needed.
 - `tools/verify_offsets_z3.py` — 34 Z3 proofs (offset algebra vs the on-device dump).
 - `tools/verify_hooks_angr.py` — angr symbolic proofs that the **compiled**
   ARM64 decoders/encoders match the ARM spec for **all** encodings.
+
+## Tombstone post-mortem — the sinum init model (merged)
+
+Two device tombstones against `com.epicgames.fortnite1241` drove the init
+rework; `libsinum.so` (loaded in the same APK) never crashed, and the fix is
+precisely sinum's init model:
+
+1. **Tombstone #1 (deadlock)** — a worker spawned from an
+   `__attribute__((constructor))` ran `dlopen`/module resolution while the
+   dynamic linker still held its write lock in `call_constructors`;
+   `libsinum.so`'s own `dlopen` blocked forever on the same lock (futex in
+   `NonPI::MutexLockWithTimeout`).
+2. **Tombstone #2 (SIGSEGV `[0+0x130]`)** — the PC-port static initializers
+   (Bosses.h's `auto GameState = UWorld::GetWorld()->GameState;` etc.,
+   `Tick.h`'s `OGS_RESOLVE(...)` pointer, PC.h's
+   `GetModuleHandleA(0) + RVA`) executed inside `_GLOBAL__sub_I_main.cpp`
+   at `dlopen` time — **before `libUE4.so` is even mapped** (the patched
+   APK loads us as the first statement of `GameActivity.onCreate`).
+   `GetWorld()` returned null → `ldr x8, [x0, #0x130]` → SEGV. On PC these
+   ran at DLL attach **into an already-running game** — that is the one
+   semantic difference of the 1:1 port, now closed.
+
+**The model now (verified on the built .so — `.init_array` contains data
+construction only, zero engine/dlopen calls):**
+
+- `JNI_OnLoad` is the ONLY load-time entry (ART calls it after `dlopen`
+  returns — the linker lock is released). No constructor attribute.
+- The worker first **polls `/proc/self/maps`** for `libUE4.so`/`libUnreal.so`
+  (pure file reads — no `dl_iterate_phdr`, no linker lock), then waits for
+  `UEngine::GetEngine()`, and only then resolves/initializes anything.
+- The PC attach-time initializers are deferred to
+  `Bosses::Init()` / `Tick::Hook()` / the `PC.h` vtable capture — called
+  from `Main()` after the engine is up, in the PC order.
+- **sinum coexistence on the same hooks**: `HookingARM64::InternalHook`
+  detects an already-patched target (`[LDR X17,#8][BR X17][.quad prev]` or
+  a far `B` veneer) and **chains** — it swaps only the detour quad and
+  hands the caller the previous detour as the "original" (our detour →
+  sinum's detour → its trampoline → the real function), instead of
+  clobbering sinum's bytes. Proven by angr/Z3 V8
+  (`OGS_Hook_IsExistingDispatch` ⇔ the dispatch-pattern equality, all
+  word pairs).
+- Latent resolver bugs fixed with it: the Tick rule-key shift
+  (`TickFlush=0x42C3ED0`, `GetMaxTickRate=0x4576310`,
+  `ServerReplicateActors=0x1023F60` — verified against the PC original),
+  the SpawnBot key typo (`0x19E9B10`, was `0x018E9B10`), plus documented
+  Zero rules for the Misc.h nullFunc site (`0x3CA10C0`) and the SpawnBot
+  caller check (`0x1A4153F`).

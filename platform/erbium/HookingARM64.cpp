@@ -29,9 +29,13 @@ namespace Hooking
     struct FHookRecord
     {
         uint8_t* target;
-        uint8_t* trampoline;
+        uint8_t* trampoline;   // our steal+relocate trampoline (null for quad-chains)
         uint8_t stolen[16];
         uint32_t stolenLen;
+        void* detour;          // our detour (for EnableHook on chained records)
+        void* prevDetour;      // previous hook's detour when chaining (else null)
+        bool bQuadChain;       // true = we swapped the .quad of an existing
+                               // LDR X17,#8;BR X17;quad patch (sinum-style)
     };
 
     static std::map<uintptr_t, FHookRecord> g_Hooks;
@@ -293,9 +297,101 @@ namespace Hooking
         if (!Ptr || !Detour)
             return false;
 
-        // already hooked → replace detour only (v1: refuse, keep first)
+        // already hooked by US → replace detour only (v1: refuse, keep first)
         if (g_Hooks.count(Ptr))
             return false;
+
+        // ── SINUM COEXISTENCE ── libsinum.so and OGS both hook libUE4.so
+        // (sinum hooks ProcessEvent etc. from its own JNI_OnLoad, which runs
+        // while our worker is still waiting for login). When we arrive the
+        // target may already be patched: we CHAIN onto the foreign hook
+        // instead of clobbering it, so both stay live.
+        const uint32_t w0 = Read32(Ptr);
+        const uint32_t w1 = Read32(Ptr + 4);
+
+        // Case A: existing absolute-dispatch patch [LDR X17,#8][BR X17][.quad
+        // prev] (our own encoding — also used by Dobby/And64-style engines,
+        // including sinum's): keep the patch, swap only the .quad to OUR
+        // detour and hand the caller the previous detour as the "original".
+        // Chain: our detour → prev detour (sinum) → its trampoline → real code.
+        if (w0 == EncLdrX17Abs() && w1 == EncBrX17())
+        {
+            void* prev = *(void**)(Ptr + 8);
+            if (!prev || (uintptr_t)prev == Ptr || (uintptr_t)prev == (uintptr_t)Detour)
+            {
+                LOGW("Hooking: existing dispatch at %llx has invalid detour quad — refusing",
+                     (unsigned long long)Ptr);
+                return false;
+            }
+
+            FHookRecord rec{};
+            rec.target = (uint8_t*)Ptr;
+            rec.trampoline = nullptr;
+            memcpy(rec.stolen, (void*)Ptr, 16);
+            rec.stolenLen = 16;
+            rec.detour = Detour;
+            rec.prevDetour = prev;
+            rec.bQuadChain = true;
+
+            SetRWX(Ptr, 16);
+            *(void**)(Ptr + 8) = Detour;
+            FlushICache((void*)Ptr, 16);
+
+            if (Original)
+                *Original = prev;
+
+            g_Hooks[Ptr] = rec;
+            LOGI("Hooking: chained onto existing dispatch @ %llx (prev detour %llx)",
+                 (unsigned long long)Ptr, (unsigned long long)(uintptr_t)prev);
+            return true;
+        }
+
+        // Case B: existing B imm26 veneer to a far target (another hook
+        // engine's style): overwrite with our standard dispatch and hand the
+        // caller a 16-byte veneer to the previous target (same chain).
+        if (IsB(w0) && !IsBL(w0))
+        {
+            uint64_t prevTarget = BTargetOf(Ptr, w0);
+            const int64_t delta = (int64_t)(prevTarget - Ptr);
+            // far target ⇒ foreign hook (a legit prologue branch points nearby)
+            if (delta < -0x1000 || delta > 0x1000)
+            {
+                uint8_t* thunk = AllocateTrampolineNear(Ptr, 16);
+                if (thunk)
+                {
+                    uint32_t* T = (uint32_t*)thunk;
+                    T[0] = EncLdrX17Abs();
+                    T[1] = EncBrX17();
+                    *(uint64_t*)&T[2] = prevTarget;
+                    FlushICache(thunk, 16);
+
+                    FHookRecord rec{};
+                    rec.target = (uint8_t*)Ptr;
+                    rec.trampoline = thunk; // OG path → previous hook
+                    memcpy(rec.stolen, (void*)Ptr, 16);
+                    rec.stolenLen = 16;
+                    rec.detour = Detour;
+                    rec.prevDetour = (void*)prevTarget;
+
+                    SetRWX(Ptr, 16);
+                    uint32_t* patch = (uint32_t*)Ptr;
+                    patch[0] = EncLdrX17Abs();
+                    patch[1] = EncBrX17();
+                    *(uint64_t*)&patch[2] = (uint64_t)Detour;
+                    FlushICache((void*)Ptr, 16);
+
+                    if (Original)
+                        *Original = thunk;
+
+                    g_Hooks[Ptr] = rec;
+                    LOGI("Hooking: chained onto existing B veneer @ %llx (prev target %llx)",
+                         (unsigned long long)Ptr, (unsigned long long)prevTarget);
+                    return true;
+                }
+            }
+        }
+
+        // Case C: clean prologue — standard steal + relocate.
 
         // Number of instructions to steal: 4 (16 bytes) covers
         // LDR(4)+BR(4)+quad(8). Relocate with range awareness.
@@ -337,10 +433,13 @@ namespace Hooking
 
         // patch target
         SetRWX(Ptr, kSteal * 4);
-        FHookRecord rec;
+        FHookRecord rec{};
         rec.target = (uint8_t*)Ptr;
         rec.trampoline = tramp;
         rec.stolenLen = kSteal * 4;
+        rec.detour = Detour;
+        rec.prevDetour = nullptr;
+        rec.bQuadChain = false;
         memcpy(rec.stolen, (void*)Ptr, rec.stolenLen);
 
         uint32_t* patch = (uint32_t*)Ptr;
@@ -365,7 +464,11 @@ namespace Hooking
         uint32_t* patch = (uint32_t*)Ptr;
         patch[0] = EncLdrX17Abs();
         patch[1] = EncBrX17();
-        *(uint64_t*)&patch[2] = (uint64_t)it->second.trampoline; // not the detour — disabled by DisableHook; enabling restores from a second record
+        // chained records re-point the existing quad at our detour; clean
+        // hooks dispatch through the trampoline (original → resume address)
+        *(uint64_t*)&patch[2] = it->second.bQuadChain
+            ? (uint64_t)it->second.detour
+            : (uint64_t)it->second.trampoline;
         FlushICache((void*)Ptr, it->second.stolenLen);
         return true;
     }
@@ -376,7 +479,19 @@ namespace Hooking
         if (it == g_Hooks.end())
             return false;
         SetRWX(Ptr, it->second.stolenLen);
-        memcpy((void*)Ptr, it->second.stolen, it->second.stolenLen);
+        if (it->second.bQuadChain)
+        {
+            // restore the previous (foreign) hook's detour quad — leave its
+            // dispatch patch fully intact
+            uint32_t* patch = (uint32_t*)Ptr;
+            patch[0] = EncLdrX17Abs();
+            patch[1] = EncBrX17();
+            *(uint64_t*)&patch[2] = (uint64_t)it->second.prevDetour;
+        }
+        else
+        {
+            memcpy((void*)Ptr, it->second.stolen, it->second.stolenLen);
+        }
         FlushICache((void*)Ptr, it->second.stolenLen);
         return true;
     }

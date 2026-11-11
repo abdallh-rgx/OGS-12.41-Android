@@ -6,219 +6,229 @@
 #include "Bots.h"
 
 namespace AccoladeTickingService {
-	float NextPlaytimeXPDrop = 0.f;
+        float NextPlaytimeXPDrop = 0.f;
 
-	// Survival Accolades
-	bool AccoladeId_026_Survival_Default_Bronze = false;
-	bool AccoladeId_027_Survival_Default_Silver = false;
-	bool AccoladeId_028_Survival_Default_Gold = false;
-	//arena
-	bool Placement25 = false;
-	bool Placement5 = false;
+        // Survival Accolades
+        bool AccoladeId_026_Survival_Default_Bronze = false;
+        bool AccoladeId_027_Survival_Default_Silver = false;
+        bool AccoladeId_028_Survival_Default_Gold = false;
+        //arena
+        bool Placement25 = false;
+        bool Placement5 = false;
 
-	// first player to land accolade
-	bool AccoladeId_018_First_Landing = false;
+        // first player to land accolade
+        bool AccoladeId_018_First_Landing = false;
 
-	void Tick(AFortGameModeAthena* GameMode, AFortGameStateAthena* GameState) {
-		float CurrentTime = UGameplayStatics::GetDefaultObj()->GetTimeSeconds(UWorld::GetWorld());
+        void Tick(AFortGameModeAthena* GameMode, AFortGameStateAthena* GameState) {
+                float CurrentTime = UGameplayStatics::GetDefaultObj()->GetTimeSeconds(UWorld::GetWorld());
 
-		if (NextPlaytimeXPDrop == 0.f) {
-			NextPlaytimeXPDrop = CurrentTime + 120.f;
-		}
+                if (NextPlaytimeXPDrop == 0.f) {
+                        NextPlaytimeXPDrop = CurrentTime + 120.f;
+                }
 
-		if (CurrentTime >= NextPlaytimeXPDrop) { // Broken or smth idk
-			NextPlaytimeXPDrop = CurrentTime + 120.f; // 2 Minute interval
-			Log("Playtime XP!");
-			for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-			{
-				Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_054_Playtime.AccoladeId_054_Playtime"));
-			}
-		}
+                if (CurrentTime >= NextPlaytimeXPDrop) { // Broken or smth idk
+                        NextPlaytimeXPDrop = CurrentTime + 120.f; // 2 Minute interval
+                        Log("Playtime XP!");
+                        for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                        {
+                                Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_054_Playtime.AccoladeId_054_Playtime"));
+                        }
+                }
 
-		int32 AliveCount = GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num();
+                int32 AliveCount = GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num();
 
-		if (AliveCount == 50 && !AccoladeId_026_Survival_Default_Bronze)
-		{
-			AccoladeId_026_Survival_Default_Bronze = true;
-			for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-			{
-				Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_026_Survival_Default_Bronze.AccoladeId_026_Survival_Default_Bronze"));
+                if (AliveCount == 50 && !AccoladeId_026_Survival_Default_Bronze)
+                {
+                        AccoladeId_026_Survival_Default_Bronze = true;
+                        for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                        {
+                                Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_026_Survival_Default_Bronze.AccoladeId_026_Survival_Default_Bronze"));
 
-			}
-		}
-
-
-		if (AliveCount == 25 && !AccoladeId_027_Survival_Default_Silver)
-		{
-			AccoladeId_027_Survival_Default_Silver = true;
-			for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-			{
-				Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_027_Survival_Default_Silver.AccoladeId_027_Survival_Default_Silver"));
-
-			}
-		}
-		if (AliveCount == 10 && !AccoladeId_028_Survival_Default_Gold)
-		{
-			AccoladeId_028_Survival_Default_Gold = true;
-			for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-			{
-				Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_028_Survival_Default_Gold.AccoladeId_028_Survival_Default_Gold"));
-			}
-		}
-
-		if (Globals::Arena)
-		{
+                        }
+                }
 
 
-		    if (AliveCount == 25 && !Placement25)
-			{
-				Placement25 = true;
-				for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-				{
-					GameMode->AlivePlayers[i]->ClientReportTournamentPlacementPointsScored(25, 60);
+                if (AliveCount == 25 && !AccoladeId_027_Survival_Default_Silver)
+                {
+                        AccoladeId_027_Survival_Default_Silver = true;
+                        for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                        {
+                                Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_027_Survival_Default_Silver.AccoladeId_027_Survival_Default_Silver"));
 
-				}
-			}
+                        }
+                }
+                if (AliveCount == 10 && !AccoladeId_028_Survival_Default_Gold)
+                {
+                        AccoladeId_028_Survival_Default_Gold = true;
+                        for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                        {
+                                Quests::GiveAccolade(GameMode->AlivePlayers[i], StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_028_Survival_Default_Gold.AccoladeId_028_Survival_Default_Gold"));
+                        }
+                }
 
-			else if (AliveCount == 5 && !Placement5)
-			{
-				Placement5 = true;
-				for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
-				{
-					GameMode->AlivePlayers[i]->ClientReportTournamentPlacementPointsScored(5, 30);
+                if (Globals::Arena)
+                {
 
-				}
-			}
 
-		}
+                    if (AliveCount == 25 && !Placement25)
+                        {
+                                Placement25 = true;
+                                for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                                {
+                                        GameMode->AlivePlayers[i]->ClientReportTournamentPlacementPointsScored(25, 60);
 
-		for (AFortPlayerControllerAthena* Player : GameMode->AlivePlayers) { 
-			// KillStreak Accolades!
-			if (CurrentTime <= Player->LastKillTimeWindow && Player->KillsInKillTimeWindow != Player->LastRecordedKillsInKillTimeWindow) {
-				if (Player->KillsInKillTimeWindow == 2) {
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_002_DoubleKill.AccoladeId_002_DoubleKill"));
-				}
-				else if (Player->KillsInKillTimeWindow == 3) {
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_003_TrippleKill.AccoladeId_003_TrippleKill"));
-				}
-				else if (Player->KillsInKillTimeWindow == 4) {
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_004_QuadraKill.AccoladeId_004_QuadraKill"));
-				}
-				else if (Player->KillsInKillTimeWindow == 5) {
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_005_PentaKill.AccoladeId_005_PentaKill"));
-				}
-				else if (Player->KillsInKillTimeWindow == 6) {
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_006_MonsterKill.AccoladeId_006_MonsterKill"));
-				}
+                                }
+                        }
 
-				Player->LastRecordedKillsInKillTimeWindow = Player->KillsInKillTimeWindow;
-			}
+                        else if (AliveCount == 5 && !Placement5)
+                        {
+                                Placement5 = true;
+                                for (size_t i = 0; i < GameMode->AlivePlayers.Num(); i++)
+                                {
+                                        GameMode->AlivePlayers[i]->ClientReportTournamentPlacementPointsScored(5, 30);
 
-			// Maybe proper?
-			if (!AccoladeId_018_First_Landing && !Player->IsInAircraft()) {
-				FVector Vel = Player->Pawn->GetVelocity();
-				float Speed = Vel.Z;
-				if (Speed == 0.f) {
-					AccoladeId_018_First_Landing = true;
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_018_First_Landing.AccoladeId_018_First_Landing"));
+                                }
+                        }
 
-					// Eh give discover landmark and poi accolade cuz idk how to track it either (for ones idk how to track i will put them in the proper places when i figure it out)
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_032_DiscoverLandmark.AccoladeId_032_DiscoverLandmark"));
-					Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_033_DiscoverPOI.AccoladeId_033_DiscoverPOI"));
-				}
-			}
-		}
-	}
+                }
+
+                for (AFortPlayerControllerAthena* Player : GameMode->AlivePlayers) { 
+                        // KillStreak Accolades!
+                        if (CurrentTime <= Player->LastKillTimeWindow && Player->KillsInKillTimeWindow != Player->LastRecordedKillsInKillTimeWindow) {
+                                if (Player->KillsInKillTimeWindow == 2) {
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_002_DoubleKill.AccoladeId_002_DoubleKill"));
+                                }
+                                else if (Player->KillsInKillTimeWindow == 3) {
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_003_TrippleKill.AccoladeId_003_TrippleKill"));
+                                }
+                                else if (Player->KillsInKillTimeWindow == 4) {
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_004_QuadraKill.AccoladeId_004_QuadraKill"));
+                                }
+                                else if (Player->KillsInKillTimeWindow == 5) {
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_005_PentaKill.AccoladeId_005_PentaKill"));
+                                }
+                                else if (Player->KillsInKillTimeWindow == 6) {
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_006_MonsterKill.AccoladeId_006_MonsterKill"));
+                                }
+
+                                Player->LastRecordedKillsInKillTimeWindow = Player->KillsInKillTimeWindow;
+                        }
+
+                        // Maybe proper?
+                        if (!AccoladeId_018_First_Landing && !Player->IsInAircraft()) {
+                                FVector Vel = Player->Pawn->GetVelocity();
+                                float Speed = Vel.Z;
+                                if (Speed == 0.f) {
+                                        AccoladeId_018_First_Landing = true;
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_018_First_Landing.AccoladeId_018_First_Landing"));
+
+                                        // Eh give discover landmark and poi accolade cuz idk how to track it either (for ones idk how to track i will put them in the proper places when i figure it out)
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_032_DiscoverLandmark.AccoladeId_032_DiscoverLandmark"));
+                                        Quests::GiveAccolade(Player, StaticLoadObject<UFortAccoladeItemDefinition>("/Game/Athena/Items/Accolades/AccoladeId_033_DiscoverPOI.AccoladeId_033_DiscoverPOI"));
+                                }
+                        }
+                }
+        }
 }
 
 namespace Tick {
-	void (*ServerReplicateActors)(void*) = decltype(ServerReplicateActors)(OGS_RESOLVE(0x1023F60));
+        // PC: initialized at DLL attach (ImageBase + RVA) into a running game.
+        // Android: resolved in Hook() below (engine is up by then) — tombstone #2
+        // fix: NO engine access from static initializers.
+        inline void (*ServerReplicateActors)(void*) = nullptr;
 
-	inline void (*TickFlushOG)(UNetDriver*, float);
-	void TickFlush(UNetDriver* Driver, float DeltaTime)
-	{
-		if (!Driver)
-			return;
+        inline void (*TickFlushOG)(UNetDriver*, float);
+        void TickFlush(UNetDriver* Driver, float DeltaTime)
+        {
+                if (!Driver)
+                        return;
 
-		AFortGameModeAthena* GameMode = (AFortGameModeAthena*)UWorld::GetWorld()->AuthorityGameMode;
-		AFortGameStateAthena* GameState = (AFortGameStateAthena*)UWorld::GetWorld()->GameState;
+                AFortGameModeAthena* GameMode = (AFortGameModeAthena*)UWorld::GetWorld()->AuthorityGameMode;
+                AFortGameStateAthena* GameState = (AFortGameStateAthena*)UWorld::GetWorld()->GameState;
 
-		if (!Driver->ReplicationDriver)
-		{
-			Log("ReplicationDriver Doesent Exist!");
-		}
+                if (!Driver->ReplicationDriver)
+                {
+                        Log("ReplicationDriver Doesent Exist!");
+                }
 
-		ServerReplicateActors(Driver->ReplicationDriver);
+                // deferred-resolution guard (PC: initialized at DLL attach)
+                if (ServerReplicateActors)
+                        ServerReplicateActors(Driver->ReplicationDriver);
 
-		if (GameState->GamePhase == EAthenaGamePhase::Warmup
-			&& (GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num()) >= Globals::MinPlayersForEarlyStart
-			&& GameState->WarmupCountdownEndTime > UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()) + 10.f) {
+                if (GameState->GamePhase == EAthenaGamePhase::Warmup
+                        && (GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num()) >= Globals::MinPlayersForEarlyStart
+                        && GameState->WarmupCountdownEndTime > UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()) + 10.f) {
 
-			auto TS = UGameplayStatics::GetTimeSeconds(UWorld::GetWorld());
-			auto DR = 10.f;
+                        auto TS = UGameplayStatics::GetTimeSeconds(UWorld::GetWorld());
+                        auto DR = 10.f;
 
-			GameState->WarmupCountdownEndTime = TS + DR;
-			GameMode->WarmupCountdownDuration = DR;
-			GameState->WarmupCountdownStartTime = TS;
-			GameMode->WarmupEarlyCountdownDuration = DR;
-		}
+                        GameState->WarmupCountdownEndTime = TS + DR;
+                        GameMode->WarmupCountdownDuration = DR;
+                        GameState->WarmupCountdownStartTime = TS;
+                        GameMode->WarmupEarlyCountdownDuration = DR;
+                }
 
-		if (Globals::bBotsEnabled && !Globals::bEventEnabled) {
-			static bool InitialisedPlayerStarts = false;
-			if (!InitialisedPlayerStarts)
-			{
-				UGameplayStatics::GetDefaultObj()->GetAllActorsOfClass(UWorld::GetWorld(), AFortPlayerStartWarmup::StaticClass(), &PlayerStarts);
-				InitialisedPlayerStarts = true;
-			}
+                if (Globals::bBotsEnabled && !Globals::bEventEnabled) {
+                        static bool InitialisedPlayerStarts = false;
+                        if (!InitialisedPlayerStarts)
+                        {
+                                UGameplayStatics::GetDefaultObj()->GetAllActorsOfClass(UWorld::GetWorld(), AFortPlayerStartWarmup::StaticClass(), &PlayerStarts);
+                                InitialisedPlayerStarts = true;
+                        }
 
-			if (((AFortGameStateAthena*)UWorld::GetWorld()->GameState)->GamePhase == EAthenaGamePhase::Warmup &&
-				GameMode->AlivePlayers.Num() > 0
-				&& (GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num()) < GameMode->GameSession->MaxPlayers
-				&& GameMode->AliveBots.Num() < Globals::MaxBotsToSpawn
-				&& GameState->WarmupCountdownEndTime > UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()))
-			{
-				if (UKismetMathLibrary::GetDefaultObj()->RandomBoolWithWeight(0.05f))
-				{
-					AActor* SpawnLocator = PlayerStarts[UKismetMathLibrary::GetDefaultObj()->RandomIntegerInRange(0, PlayerStarts.Num() - 1)];
+                        if (((AFortGameStateAthena*)UWorld::GetWorld()->GameState)->GamePhase == EAthenaGamePhase::Warmup &&
+                                GameMode->AlivePlayers.Num() > 0
+                                && (GameMode->AlivePlayers.Num() + GameMode->AliveBots.Num()) < GameMode->GameSession->MaxPlayers
+                                && GameMode->AliveBots.Num() < Globals::MaxBotsToSpawn
+                                && GameState->WarmupCountdownEndTime > UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()))
+                        {
+                                if (UKismetMathLibrary::GetDefaultObj()->RandomBoolWithWeight(0.05f))
+                                {
+                                        AActor* SpawnLocator = PlayerStarts[UKismetMathLibrary::GetDefaultObj()->RandomIntegerInRange(0, PlayerStarts.Num() - 1)];
 
-					if (SpawnLocator)
-					{
-						PlayerBots::SpawnPlayerBots(SpawnLocator);
-					}
-				}
-			}
-		}
+                                        if (SpawnLocator)
+                                        {
+                                                PlayerBots::SpawnPlayerBots(SpawnLocator);
+                                        }
+                                }
+                        }
+                }
 
-		if (GameState->WarmupCountdownEndTime - UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()) <= 0 && GameState->GamePhase == EAthenaGamePhase::Warmup)
-		{
-			GameMode::StartAircraftPhase(GameMode, 0);
-		}
+                if (GameState->WarmupCountdownEndTime - UGameplayStatics::GetTimeSeconds(UWorld::GetWorld()) <= 0 && GameState->GamePhase == EAthenaGamePhase::Warmup)
+                {
+                        GameMode::StartAircraftPhase(GameMode, 0);
+                }
 
-		if (GameState->GamePhase > EAthenaGamePhase::Warmup && !Globals::bCreativeEnabled) {
-			AccoladeTickingService::Tick(GameMode, GameState);
-		}
+                if (GameState->GamePhase > EAthenaGamePhase::Warmup && !Globals::bCreativeEnabled) {
+                        AccoladeTickingService::Tick(GameMode, GameState);
+                }
 
-		if (Globals::bBossesEnabled && !Globals::bEventEnabled && GameState->GamePhase > EAthenaGamePhase::Warmup)
-		{
-			Bosses::TickBots(DeltaTime);
-		}
+                if (Globals::bBossesEnabled && !Globals::bEventEnabled && GameState->GamePhase > EAthenaGamePhase::Warmup)
+                {
+                        Bosses::TickBots(DeltaTime);
+                }
 
-		if (Globals::bBotsEnabled && !Globals::bEventEnabled) {
-			PlayerBots::Tick();
-		}
+                if (Globals::bBotsEnabled && !Globals::bEventEnabled) {
+                        PlayerBots::Tick();
+                }
 
-		return TickFlushOG(Driver, DeltaTime);
-	}
+                return TickFlushOG(Driver, DeltaTime);
+        }
 
-	inline float GetMaxTickRate()
-	{
-		return 30.f;
-	}
+        inline float GetMaxTickRate()
+        {
+                return 30.f;
+        }
 
-	void Hook() {
-		OGS_HOOK(0x42C3ED0, TickFlush, TickFlushOG);
-		OGS_HOOK_NOREF(0x4576310, GetMaxTickRate);
+        void Hook() {
+                // deferred resolution (PC: DLL-attach initializer)
+                ServerReplicateActors = decltype(ServerReplicateActors)(OGS_RESOLVE(0x1023F60));
+                if (!ServerReplicateActors)
+                        Log("WARNING: ServerReplicateActors unresolved — TickFlush replication skipped");
 
-		Log("Tick Hooked!");
-	}
+                OGS_HOOK(0x42C3ED0, TickFlush, TickFlushOG);
+                OGS_HOOK_NOREF(0x4576310, GetMaxTickRate);
+
+                Log("Tick Hooked!");
+        }
 }
