@@ -61,6 +61,13 @@ int32_t AInputQueue_getEvent(void* Queue, void** OutEvent)
 
 } // namespace
 
+void QueueMenuToggle()
+{
+    std::lock_guard<std::mutex> Lock(g_Mutex);
+    g_ToggleQueued = true;
+    LOGI("Gui: menu toggle queued (via JNI)");
+}
+
 void OnPointerUpdate(int32_t PointerCount)
 {
 	std::lock_guard<std::mutex> Lock(g_Mutex);
