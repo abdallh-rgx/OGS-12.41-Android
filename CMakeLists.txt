@@ -18,6 +18,7 @@ add_library(OGS-12.41 SHARED
     src/GuiRenderer.cpp
     src/ListenServer.cpp
     src/Verification.cpp
+    src/JniBridge.cpp
     src/ImGui/imgui.cpp
     src/ImGui/imgui_draw.cpp
     src/ImGui/imgui_tables.cpp
